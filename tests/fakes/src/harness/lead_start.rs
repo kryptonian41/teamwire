@@ -1,9 +1,7 @@
 //! `FakeHarness::lead_start`: a fresh lead's command line built from the
-//! request, with the old flags a test chose to drop left out. The fake
-//! refuses a request whose `new_session` does not match its
-//! `choose_session_id` capability, as the real harnesses do.
+//! request, with the old flags a test chose to drop left out.
 
-use teamwire_core::{HarnessError, HarnessErrorCode, LeadStart, LeadStartSpec};
+use teamwire_core::{HarnessError, LeadStart, LeadStartSpec};
 
 use super::FakeHarness;
 use crate::calls::{CallKind, lock};
@@ -17,16 +15,11 @@ impl FakeHarness {
         if let Some(err) = &state.lead_start_fault {
             return Err(err.clone());
         }
-        if req.new_session.is_some() != state.caps.choose_session_id {
-            return Err(HarnessError::new(
-                HarnessErrorCode::BadInput,
-                "new_session must be set exactly when the harness chooses session ids",
-            ));
-        }
-        let mut argv = vec!["fake-claude".to_owned()];
-        if let Some(new) = &req.new_session {
-            argv.extend(["--session-id".to_owned(), new.as_str().to_owned()]);
-        }
+        let mut argv = vec![
+            "fake-claude".to_owned(),
+            "--session-id".to_owned(),
+            req.new_session.as_str().to_owned(),
+        ];
         let mut dropped = Vec::new();
         for word in req.old_args.iter().skip(1) {
             if state.lead_start_drops.contains(word) {

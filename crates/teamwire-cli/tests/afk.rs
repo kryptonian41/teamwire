@@ -266,7 +266,7 @@ fn a_member_session_is_refused_before_anything_is_made() {
 #[test]
 fn a_lead_that_is_not_claude_code_is_refused_before_anything_is_made() {
     let mut bed = Bed::new(true);
-    bed.env = vec![("TEAMWIRE_LEAD_HARNESS", "codex")];
+    bed.env = vec![("TEAMWIRE_LEAD_HARNESS", "pi")];
     let out = bed.start_run("run", &[]);
     assert_eq!(out.status.code(), Some(1), "{}", err(&out));
     assert!(

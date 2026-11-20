@@ -41,7 +41,6 @@ fn member() -> MemberLaunch {
         teamwire_bin: "/bin/teamwire".into(),
         plugins: std::collections::BTreeMap::new(),
         context_handoff_tokens: None,
-        accept_trust: false,
     }
 }
 
@@ -65,13 +64,12 @@ fn without_config_env_identity_moves_to_the_host_channel() {
     let h = FakeHarness::new();
     h.set_caps(HarnessCaps {
         session_env_via_config: false,
-        choose_session_id: false,
         ..FakeHarness::caps()
     });
     let spec = h.launch_spec(&member()).unwrap();
     assert_eq!(spec.identity_channel, IdentityChannel::HostEnv);
     assert_eq!(spec.env.len(), 2);
-    assert!(!spec.argv.contains(&"--session-id".to_owned()));
+    assert!(spec.argv.contains(&"--session-id".to_owned()));
     let doc: Value = serde_json::from_slice(&spec.files.first().unwrap().bytes).unwrap();
     assert!(doc.get("env").is_none());
 }

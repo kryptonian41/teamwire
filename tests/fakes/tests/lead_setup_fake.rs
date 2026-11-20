@@ -27,7 +27,6 @@ fn run(setup: &dyn LeadSetup, platform: &FakePlatform, home: &Path) {
         home,
         command: command(),
         shared_skill: "---\nname: teamwire\n---\n",
-        before_read: &|_| {},
     });
 }
 

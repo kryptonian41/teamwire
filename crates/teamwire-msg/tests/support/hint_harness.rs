@@ -1,11 +1,5 @@
-//! A harness that names the caller's session only through one lookup key,
-//! as Codex does through `MCP_META_sessionId`, and that can run a function
-//! when its startup dialog is answered, as a session-start hook would.
+//! A harness that can read the contract file when it builds a launch.
 //! Everything else is the fake's.
-#![expect(
-    clippy::unwrap_used,
-    reason = "helper functions in an integration-test file unwrap; a failure there fails the test"
-)]
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -14,48 +8,27 @@ use std::time::Duration;
 use teamwire_core::{
     CallerSession, Harness, HarnessCaps, HarnessError, HarnessErrorCode, HarnessId, Host,
     LaunchSpec, Liveness, MemberLaunch, OneLine, OtelConfig, Pid, Place, Role, ScreenState,
-    SessionId, SessionKind, StartupOutcome, TeamName, TrustPolicy, TurnEnd,
+    SessionId, StartupOutcome, TeamName, TrustPolicy, TurnEnd,
 };
 use teamwire_fakes::FakeHarness;
 
-/// Where a harness puts the launches it was asked to resume.
-pub(crate) type Resumes = Arc<std::sync::Mutex<Vec<MemberLaunch>>>;
-
-type StartupFn = Box<dyn Fn(&Place) + Send + Sync>;
-
 pub(crate) struct HintHarness {
     inner: Arc<FakeHarness>,
-    key: &'static str,
-    on_startup: Option<StartupFn>,
     reads_contract: bool,
-    resumes: Option<Resumes>,
 }
 
 impl HintHarness {
-    pub(crate) fn new(inner: Arc<FakeHarness>, key: &'static str) -> Self {
+    pub(crate) fn new(inner: Arc<FakeHarness>) -> Self {
         Self {
             inner,
-            key,
-            on_startup: None,
             reads_contract: false,
-            resumes: None,
         }
     }
 
-    /// `launch_spec` reads the contract file, as Codex does, and fails when
-    /// it is not there yet.
+    /// `launch_spec` reads the contract file, as a harness that puts its text
+    /// in argv would, and fails when it is not there yet.
     pub(crate) fn reading_contract(mut self) -> Self {
         self.reads_contract = true;
-        self
-    }
-
-    pub(crate) fn recording_resumes(mut self, into: Resumes) -> Self {
-        self.resumes = Some(into);
-        self
-    }
-
-    pub(crate) fn on_startup(mut self, f: impl Fn(&Place) + Send + Sync + 'static) -> Self {
-        self.on_startup = Some(Box::new(f));
         self
     }
 }
@@ -82,16 +55,10 @@ impl Harness for HintHarness {
         self.inner.launch_spec(m)
     }
     fn resume_spec(&self, m: &MemberLaunch, s: &SessionId) -> Result<LaunchSpec, HarnessError> {
-        if let Some(into) = &self.resumes {
-            into.lock().unwrap().push(m.clone());
-        }
         self.inner.resume_spec(m, s)
     }
     fn caller_session(&self, get: &dyn Fn(&str) -> Option<String>) -> Option<CallerSession> {
-        Some(CallerSession {
-            id: SessionId::parse(&get(self.key)?).unwrap(),
-            kind: SessionKind::Interactive,
-        })
+        self.inner.caller_session(get)
     }
     fn session_cwd(&self, s: &SessionId) -> Result<Option<PathBuf>, HarnessError> {
         self.inner.session_cwd(s)
@@ -120,9 +87,6 @@ impl Harness for HintHarness {
         place: &Place,
         policy: TrustPolicy,
     ) -> Result<StartupOutcome, HarnessError> {
-        if let Some(f) = &self.on_startup {
-            f(place);
-        }
         self.inner.answer_startup(host, place, policy)
     }
     fn otel_env(&self, team: &TeamName, role: &Role, base: &OtelConfig) -> Vec<(String, String)> {

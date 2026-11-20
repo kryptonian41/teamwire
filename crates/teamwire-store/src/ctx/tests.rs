@@ -26,13 +26,10 @@ impl Harness for Stub {
             turn_end_hook: false,
             in_turn_hook: false,
             mcp_client: false,
-            choose_session_id: false,
             can_push: false,
             session_env_via_config: false,
-            reads_watch_lines: true,
             watch_start: teamwire_core::harness::WatchStart::MonitoredCommand,
             load_skill: "",
-            reads_input_box: false,
             runs_afk: false,
         }
     }

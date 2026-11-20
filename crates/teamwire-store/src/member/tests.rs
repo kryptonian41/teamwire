@@ -509,7 +509,7 @@ fn a_handoff_moves_the_member_to_a_new_generation_session_and_place() {
     let session = SessionId::parse("new-sess").unwrap();
     let g = f
         .store
-        .write(|tx| tx.record_handoff(at(50), &r, Some(&session), &handoff_place()))
+        .write(|tx| tx.record_handoff(at(50), &r, &session, &handoff_place()))
         .unwrap();
     assert_eq!(g, 2);
     let m = f.store.read(|tx| tx.member(&r)).unwrap().unwrap();
@@ -533,20 +533,6 @@ fn a_handoff_moves_the_member_to_a_new_generation_session_and_place() {
 }
 
 #[test]
-fn a_handoff_without_a_session_clears_it_and_records_null() {
-    let mut f = started_web();
-    let r = role("web");
-    f.store
-        .write(|tx| tx.record_handoff(at(50), &r, None, &handoff_place()))
-        .unwrap();
-    let m = f.store.read(|tx| tx.member(&r)).unwrap().unwrap();
-    assert_eq!(m.session_id, None);
-    let data = last_event(&f.store).data;
-    assert_eq!(data["old_session"], "old-sess");
-    assert!(data["new_session"].is_null());
-}
-
-#[test]
 fn a_handoff_clears_the_reminder_of_unread_deliveries_only() {
     let mut f = started_web();
     let web = crate::testkit::member("web");
@@ -560,7 +546,10 @@ fn a_handoff_clears_the_reminder_of_unread_deliveries_only() {
         })
         .unwrap();
     f.store
-        .write(|tx| tx.record_handoff(at(50), &role("web"), None, &handoff_place()))
+        .write(|tx| {
+            let session = SessionId::parse("new-sess").unwrap();
+            tx.record_handoff(at(50), &role("web"), &session, &handoff_place())
+        })
         .unwrap();
     let after = |m| f.store.read(|tx| tx.delivery(m, &web)).unwrap().unwrap();
     assert_eq!(after(&unread).reminded_at, None);
@@ -574,9 +563,10 @@ fn only_a_started_member_can_hand_off() {
         .write(|tx| tx.remove_member(at(3), &role("web"), None, &json!({})))
         .unwrap();
     for name in ["api", "web", "nobody"] {
-        let r = f
-            .store
-            .write(|tx| tx.record_handoff(at(4), &role(name), None, &handoff_place()));
+        let r = f.store.write(|tx| {
+            let session = SessionId::parse("new-sess").unwrap();
+            tx.record_handoff(at(4), &role(name), &session, &handoff_place())
+        });
         assert!(matches!(r, Err(StoreError::Constraint(_))), "{name}: {r:?}");
     }
     assert_eq!(count_events(&f.store, EventType::MemberHandoff), 0);

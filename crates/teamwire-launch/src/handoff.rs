@@ -10,7 +10,7 @@
 //! write already started the new generation).
 
 use std::fmt::Write as _;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use teamwire_core::{
     Address, DeliveryState, Member, MemberState, Mode, Place, Recipient, Role, SessionId,
@@ -20,18 +20,14 @@ use teamwire_store::Ctx;
 use thiserror::Error;
 
 use crate::member_steps::{first_line, not_open};
-use crate::reopen::{
-    Ready, ReopenOpts, ReopenOutcome, close_new_tab, member_launch, open_place, reusable,
-};
+use crate::reopen::{Ready, ReopenOutcome, close_new_tab, member_launch, open_place, reusable};
 
 /// A member that passed launch's checks, with the tab its new session needs.
 pub struct HandoffPlan<'r> {
     pub team: TeamName,
     pub member: Member,
-    /// The id the new session starts with, for a harness that lets teamwire
-    /// choose it. `None` for one that picks its own (Codex), whose
-    /// session-start hook records it.
-    pub new_session: Option<SessionId>,
+    /// The id the new session starts with.
+    pub new_session: SessionId,
     /// The argv of the new session, for `--dry-run`.
     pub argv: Vec<String>,
     /// The new session's first line.
@@ -78,11 +74,7 @@ pub struct Handoff {
 /// Checks that `role` can get a fresh session, and builds its tab request:
 /// the team is open, the member started, its folder and per-run files are
 /// there. Writes nothing.
-pub fn plan_handoff<'r>(
-    ctx: &Ctx<'r>,
-    role: &Role,
-    teamwire_bin: Option<PathBuf>,
-) -> Result<HandoffPlan<'r>, HandoffError> {
+pub fn plan_handoff<'r>(ctx: &Ctx<'r>, role: &Role) -> Result<HandoffPlan<'r>, HandoffError> {
     let (team, member, options, unread) = ctx
         .store
         .read(|tx| {
@@ -95,8 +87,7 @@ pub fn plan_handoff<'r>(
             ))
         })
         .map_err(|e| HandoffError::Store(e.to_string()))?;
-    plan_with(ctx, role, teamwire_bin, (team, member, options, unread))
-        .map_err(HandoffError::Refused)
+    plan_with(ctx, role, (team, member, options, unread)).map_err(HandoffError::Refused)
 }
 
 /// Every delivery state but `acked`: what `teamwire inbox` still returns,
@@ -119,7 +110,6 @@ type Read = (
 fn plan_with<'r>(
     ctx: &Ctx<'r>,
     role: &Role,
-    teamwire_bin: Option<PathBuf>,
     (team, member, options, unread): Read,
 ) -> Result<HandoffPlan<'r>, String> {
     let team = team.ok_or("the team has no record")?;
@@ -148,12 +138,7 @@ fn plan_with<'r>(
         ));
     }
     let session = SessionId::parse(&uuid::Uuid::new_v4().to_string()).map_err(|e| e.to_string())?;
-    let opts = ReopenOpts {
-        teamwire_bin,
-        ..ReopenOpts::default()
-    };
-    let launch = member_launch(ctx, &team.name, &member, &options, &opts, &session)
-        .map_err(|o| format!("{role}: {}", reason(o)))?;
+    let launch = member_launch(ctx, &team.name, &member, &options, &session);
     let spec = harness
         .launch_spec(&launch)
         .map_err(|e| format!("{role}: the harness could not build the launch: {e}"))?;
@@ -212,7 +197,7 @@ fn plan_with<'r>(
         folder: member.repo.clone().unwrap_or_else(|| member.cwd.clone()),
     };
     Ok(HandoffPlan {
-        new_session: harness.capabilities().choose_session_id.then_some(session),
+        new_session: session,
         team: team.name,
         member,
         argv: spec.argv,
@@ -229,25 +214,14 @@ pub fn open_handoff(ctx: &mut Ctx<'_>, plan: &HandoffPlan<'_>) -> Result<Handoff
     let role = &plan.member.role;
     let place = match open_place(&plan.ready) {
         Ok(place) => place,
-        Err(o) => return Err(failed(ctx, plan, &reason(o))),
+        Err(o) => return Err(failed(plan, &reason(o))),
     };
     let at = ctx.clock.now();
-    let old = plan.member.session_id.as_ref();
     let written = ctx.store.write(|tx| {
         if let Some(state) = not_open(&tx.reader())? {
             return Ok(Err(state));
         }
-        // A harness that picks its own session may have recorded it already
-        // through its session-start hook; that id is the new session's.
-        let session = match &plan.new_session {
-            Some(s) => Some(s.clone()),
-            None => tx
-                .reader()
-                .member(role)?
-                .and_then(|m| m.session_id)
-                .filter(|s| Some(s) != old),
-        };
-        tx.record_handoff(at, role, session.as_ref(), &place)
+        tx.record_handoff(at, role, &plan.new_session, &place)
             .map(Ok)
     });
     let generation = match written {
@@ -255,12 +229,12 @@ pub fn open_handoff(ctx: &mut Ctx<'_>, plan: &HandoffPlan<'_>) -> Result<Handoff
         Ok(Err(state)) => {
             let why = format!("team_closed: the team is {state}");
             let why = close_new_tab(&plan.ready, &place, &why);
-            return Err(failed(ctx, plan, &why));
+            return Err(failed(plan, &why));
         }
         Err(e) => {
             let why = format!("the handoff could not be recorded: {e}");
             let why = close_new_tab(&plan.ready, &place, &why);
-            return Err(failed(ctx, plan, &why));
+            return Err(failed(plan, &why));
         }
     };
     let mut warnings = Vec::new();
@@ -326,12 +300,9 @@ fn reason(outcome: ReopenOutcome) -> String {
     }
 }
 
-/// `why`, and how to get the member back. Nothing recorded the handoff, but
-/// a harness that records its own session (Codex, through its session-start
-/// hook) may have put the new session on the row before the failure. The
-/// old one is written back, after the new tab is closed, so reopen resumes
-/// the session that holds the member's work.
-fn failed(ctx: &mut Ctx<'_>, plan: &HandoffPlan<'_>, why: &str) -> String {
+/// `why`, and how to get the member back. Nothing recorded the handoff, so
+/// the member's row still holds the old session, which reopen resumes.
+fn failed(plan: &HandoffPlan<'_>, why: &str) -> String {
     let role = &plan.member.role;
     let Some(old) = &plan.member.session_id else {
         return format!(
@@ -339,24 +310,11 @@ fn failed(ctx: &mut Ctx<'_>, plan: &HandoffPlan<'_>, why: &str) -> String {
              no old session for `teamwire reopen` to resume"
         );
     };
-    let restored = ctx.store.write(|tx| {
-        let now = tx.reader().member(role)?.and_then(|m| m.session_id);
-        if now.as_ref() == Some(old) {
-            return Ok(());
-        }
-        tx.set_member_session(role, old)
-    });
-    match restored {
-        Ok(()) => format!(
-            "{role}: {why}. The old session {old} is still recorded, so `teamwire reopen {} \
-             --role {role}` resumes it",
-            plan.team
-        ),
-        Err(e) => format!(
-            "{role}: {why}. The old session {old} could not be recorded again ({e}), so the \
-             member may hold a new, empty session; reopen would resume that one"
-        ),
-    }
+    format!(
+        "{role}: {why}. The old session {old} is still recorded, so `teamwire reopen {} \
+         --role {role}` resumes it",
+        plan.team
+    )
 }
 
 #[cfg(test)]

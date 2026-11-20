@@ -91,7 +91,6 @@ pub fn validate(
     }
     if existing.is_none() {
         lead_setup_present(harness, &mut errors);
-        lead_must_be_locatable(env, &lead, &mut errors);
     }
     team_title(spec, existing.as_ref(), &mut errors);
     plugin_keys(&spec.plugins, None, &mut errors);
@@ -149,41 +148,6 @@ pub fn validate(
 fn lead_setup_present(harness: &dyn teamwire_core::Harness, errors: &mut Vec<SpecError>) {
     if let Some(why) = harness.lead_setup_missing() {
         errors.push(SpecError::new(None, None, "lead_setup_missing", why));
-    }
-}
-
-/// A lead whose harness cannot read `teamwire watch` is reached only by
-/// typing into its pane, so it must be found there before anything is made
-/// (ADR 0023 point 9). A harness that reads watch lines is not checked.
-fn lead_must_be_locatable(env: &ValidateEnv<'_>, lead: &LeadPlan, errors: &mut Vec<SpecError>) {
-    let (Ok(harness), Ok(host)) = (
-        env.registry.harness(&lead.harness),
-        env.registry.host(&lead.host),
-    ) else {
-        return;
-    };
-    if harness.capabilities().reads_watch_lines {
-        return;
-    }
-    let found = match &lead.session {
-        Some((session, _)) => {
-            teamwire_deliver::locate_session(env.platform, env.clock, session, harness, host)
-                .map(|_| ())
-                .map_err(|e| e.to_string())
-        }
-        None => Err("the lead's session id could not be read".to_owned()),
-    };
-    if let Err(why) = found {
-        errors.push(SpecError::new(
-            None,
-            None,
-            "lead_not_locatable",
-            format!(
-                "teamwire cannot find the lead's pane ({why}), and this lead cannot read \
-                 `teamwire watch`, so results would reach nobody. Start the lead so its session \
-                 runs inside its own pane: for Codex, run `codex --no-daemon`."
-            ),
-        ));
     }
 }
 
@@ -303,9 +267,8 @@ fn background_lead() -> SpecError {
 }
 
 /// The lead of a team that does not exist yet: the caller's own session, as
-/// `validate` would resolve it. A caller with no session, one in the
-/// background, or one whose pane cannot be found when its harness cannot read
-/// `teamwire watch` (ADR 0023 point 9), is refused.
+/// `validate` would resolve it. A caller with no session, or one in the
+/// background, is refused.
 pub fn new_team_lead(env: &ValidateEnv<'_>) -> Result<LeadPlan, SpecError> {
     let harness = env
         .registry
@@ -333,7 +296,6 @@ pub fn new_team_lead(env: &ValidateEnv<'_>) -> Result<LeadPlan, SpecError> {
     let lead = lead_plan(env, None, Some((session.id, session.kind)))?;
     let mut errors = Vec::new();
     lead_setup_present(harness, &mut errors);
-    lead_must_be_locatable(env, &lead, &mut errors);
     errors.into_iter().next().map_or(Ok(lead), Err)
 }
 

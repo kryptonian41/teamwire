@@ -118,7 +118,6 @@ fn harness_setup(harness: &FakeHarness) -> HarnessSetup<'_> {
             teamwire_bin: "/bin/teamwire".into(),
             plugins: std::collections::BTreeMap::new(),
             context_handoff_tokens: None,
-            accept_trust: false,
         },
         turn_end_stdin: br#"{"session_id":"member-1","stop_hook_active":false}"#.to_vec(),
         turn_end_session: sid("member-1"),
@@ -173,7 +172,6 @@ fn fake_harness_without_config_env_passes_harness_contract() {
     let harness = FakeHarness::new();
     harness.set_caps(HarnessCaps {
         session_env_via_config: false,
-        choose_session_id: false,
         can_push: true,
         ..FakeHarness::caps()
     });

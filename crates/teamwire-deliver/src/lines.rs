@@ -313,19 +313,13 @@ pub enum WatchText {
 pub fn watch_text(start: WatchStart, place: WatchText, team: &TeamName) -> String {
     let command = match start {
         WatchStart::MonitoredCommand => format!("teamwire watch {team}"),
-        WatchStart::BackgroundCommand => {
-            format!("nohup teamwire watch {team} --deliver >/dev/null 2>&1 &")
-        }
         // The lead extension refuses `teamwire watch` in its shell, so this
         // lead is never given the command.
         WatchStart::ExtensionTool => return watch_tool_text(place, team),
     };
     match place {
-        WatchText::StopHold if start == WatchStart::MonitoredCommand => format!(
-            "[teamwire:{team}] no watch is running; start `{command}` with Monitor before you stop."
-        ),
         WatchText::StopHold => format!(
-            "[teamwire:{team}] no watch is running; start it in the background with `{command}` before you stop."
+            "[teamwire:{team}] no watch is running; start `{command}` with Monitor before you stop."
         ),
         WatchText::ResultSuffix => format!("(no watch is running: {command})"),
         WatchText::AfterReprompt => format!("no watch is running: start one with `{command}`"),

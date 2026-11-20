@@ -410,7 +410,7 @@ fn a_message_body_that_fails_its_hash_does_not_stop_the_result() {
 /// The hook's name in the metrics follows the member's own harness.
 #[test]
 fn the_hold_event_names_the_hook_of_the_members_harness() {
-    for (harness, hook) in [("codex", "codex-stop"), ("claude-code", "claude-stop")] {
+    for (harness, hook) in [("pi", "pi-stop"), ("claude-code", "claude-stop")] {
         let (mut rig, _) = team();
         let teamwire_store::Party::Member(web) = rig.add_member("web", harness, "web-1") else {
             unreachable!("add_member returns a member")

@@ -181,12 +181,7 @@ fn every_member_hook_on_a_newer_schema_says_so_and_changes_nothing() {
         })
         .unwrap();
     let before = events(&fx);
-    for which in [
-        "claude-stop",
-        "turn-end",
-        "claude-post-tool",
-        "session-start",
-    ] {
+    for which in ["claude-stop", "turn-end", "claude-post-tool"] {
         let run = hook(&fx, which, &as_api(), &stop_input("sess-1"));
         assert_eq!((run.code, run.out.as_str()), (0, ""), "{which}");
         assert!(
@@ -465,7 +460,7 @@ fn post_tool_tells_a_member_past_its_handoff_point_once_per_generation() {
     let new = SessionId::parse("sess-2").unwrap();
     let at = teamwire_core::Clock::now(&fx.clock);
     fx.store
-        .write(|tx| tx.record_handoff(at, &api, Some(&new), &place))
+        .write(|tx| tx.record_handoff(at, &api, &new, &place))
         .unwrap();
     let next = post_tool_input("sess-2", &transcript(&fx, 412_000));
     assert!(context(&hook(&fx, "claude-post-tool", &as_api(), &next)).contains("412k"));

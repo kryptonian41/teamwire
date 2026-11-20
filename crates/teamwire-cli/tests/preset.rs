@@ -590,8 +590,8 @@ fn every_member_names_a_task_class_and_no_model() {
 
 /// The family of a member's model sets its harness (ADR 0053): Claude Code
 /// for a Claude model, with pi as the fallback, and pi for any other family.
-/// The skill gives every lead that rule, the pi and Codex notes repeat it for
-/// their own default, and the skill no longer forbids a harness change.
+/// The skill gives every lead that rule, the pi note repeats it for its own
+/// default, and the skill no longer forbids a harness change.
 #[test]
 fn the_models_family_sets_a_members_harness() {
     let skill = flat(&example("skills/teamwire/SKILL.md"));
@@ -628,25 +628,15 @@ fn the_models_family_sets_a_members_harness() {
         "the skill sets the harness before it picks the model"
     );
 
-    for (note, needed) in [
-        (
-            "skills/pi-lead.md",
-            "A member on a Claude model runs on Claude Code first, so give it \
-             `\"harness\": \"claude-code\"`",
-        ),
-        (
-            "skills/codex-lead.md",
-            "`\"harness\": \"claude-code\"` for a Claude model and `\"harness\": \"pi\"` for a \
-             model of any other family",
-        ),
-    ] {
-        let text = flat(&example(note));
-        assert!(text.contains(needed), "{note} misses: {needed}");
-        assert!(
-            text.contains("\"Choose each member's model\""),
-            "{note} does not point at the skill's model section"
-        );
-    }
+    let note = "skills/pi-lead.md";
+    let needed = "A member on a Claude model runs on Claude Code first, so give it \
+                  `\"harness\": \"claude-code\"`";
+    let text = flat(&example(note));
+    assert!(text.contains(needed), "{note} misses: {needed}");
+    assert!(
+        text.contains("\"Choose each member's model\""),
+        "{note} does not point at the skill's model section"
+    );
 }
 
 /// The printed skeleton shows a member's task class beside its seat, right
@@ -676,7 +666,7 @@ fn the_skeleton_prints_the_task_class_right_after_the_mode() {
 }
 
 /// The lead reads each preset's rules and notes (every key that starts with
-/// an underscore), and the pi or Codex note, beside the skill. Each item is
+/// an underscore), and the pi note, beside the skill. Each item is
 /// the text and the place it came from.
 fn lead_notes() -> Vec<(String, String)> {
     fn underscore_texts(map: &serde_json::Map<String, Value>) -> Vec<String> {
@@ -702,9 +692,8 @@ fn lead_notes() -> Vec<(String, String)> {
         }
         notes.extend(texts.into_iter().map(|t| (name.to_owned(), t)));
     }
-    for note in ["skills/pi-lead.md", "skills/codex-lead.md"] {
-        notes.push((note.to_owned(), example(note)));
-    }
+    let note = "skills/pi-lead.md";
+    notes.push((note.to_owned(), example(note)));
     notes
 }
 
@@ -959,7 +948,7 @@ fn the_speckit_preset_runs_spec_then_analyze_then_impl() {
     }
 }
 
-/// A spec-kit feature runs through members on three harnesses, so the
+/// A spec-kit feature runs through members on two harnesses, so the
 /// reference says how each one runs `implement`, and how a worktree member
 /// finds its feature. The skill points at that section and says that
 /// spec-kit's `specs/` folder is a product file a member commits.
@@ -977,7 +966,6 @@ fn the_reference_says_how_each_harness_runs_spec_kit() {
     let section = section.split("\n## ").next().unwrap();
     for needed in [
         "`/speckit-implement <scope>`",
-        "`$speckit-implement <scope>`",
         "`.pi/prompts/speckit.implement.md`",
         "`.specify/feature.json`",
         "`.specify/memory/constitution.md`",
@@ -1430,19 +1418,6 @@ fn the_speckit_before_rule_and_the_close_sentence_state_what_the_pilot_showed() 
         !adr.contains("checks the base branch by hand") && adr.contains("`teamwire doctor`"),
         "{adr}"
     );
-    // Codex launch refuses either file (teamwire-harness-codex OWN_CONFIG_FILES).
-    for needed in [
-        "no `.codex/config.toml` or `.codex/hooks.json` exists",
-        "Codex launch refuses a repository that holds `.codex/config.toml` or `.codex/hooks.json`",
-    ] {
-        assert!(rules.contains(needed), "rules lack {needed}: {rules}");
-    }
-    assert!(
-        adr.contains(
-            "Codex launch refuses a repository that holds `.codex/config.toml` or `.codex/hooks.json`"
-        ),
-        "{adr}"
-    );
     let skill = flat(&example("skills/teamwire/SKILL.md"));
     assert!(
         skill.contains(
@@ -1496,10 +1471,6 @@ fn the_reference_doctor_table_says_what_each_warn_means() {
             "committed",
             "When the ref is not the checked-out branch, run `git switch <ref>` and commit there, or commit here and merge this branch into the ref",
         ),
-        (
-            "events",
-            "only on disk also warns: remove it from the repository. A manifest",
-        ),
         ("committed", "Run the `git add` it prints"),
         (
             "constitution",
@@ -1532,10 +1503,6 @@ fn the_reference_doctor_table_says_what_each_warn_means() {
             "then run `specify extension remove <ext>` or set `optional: true` on the hook",
         ),
         ("events", "A spec-kit runtime event is set up in the commit"),
-        (
-            "events",
-            "`.codex/hooks.json` that is only on disk also warns",
-        ),
         (
             "events",
             "`.claude/settings.json` holds a hook tagged `\"__speckit_event__\": true`",
@@ -1645,28 +1612,12 @@ fn the_skill_notes_name_the_members_they_are_for() {
     assert!(seen >= 6, "{seen} notes name the tdd skill");
 }
 
-/// A Codex or pi lead reads its own lead file where the skill quotes a line
-/// that names Monitor. The lines are the ones the program prints for that
-/// harness (plan D7 and D17), and the pull-request watch is the one each
-/// harness can run (D12, D13).
+/// A pi lead reads its own lead file where the skill quotes a line that
+/// names Monitor. The lines are the ones the program prints for that harness
+/// (plan D7 and D17), and the pull-request watch is the one it can run (D12,
+/// D13).
 #[test]
-fn the_codex_and_pi_lead_files_quote_their_own_watch_lines() {
-    let codex = example("skills/codex-lead.md");
-    let bg = "nohup teamwire watch <team> --deliver >/dev/null 2>&1 &";
-    for line in [
-        format!("watch: {bg}"),
-        format!(
-            "[teamwire:<team>] no watch is running; start it in the background with `{bg}` before you stop."
-        ),
-        format!("(no watch is running: {bg})"),
-        format!("no watch is running: start one with `{bg}`"),
-        "nohup teamwire pr-watch --deliver <team> -R OWNER/REPO -i 45 3453 3454 >/dev/null 2>&1 &"
-            .to_owned(),
-        "teamwire lead --adopt <team>".to_owned(),
-        "teamwire install --harness codex".to_owned(),
-    ] {
-        assert!(codex.contains(&line), "codex-lead.md lacks {line}");
-    }
+fn the_pi_lead_file_quotes_its_own_watch_lines() {
     let pi = example("skills/pi-lead.md");
     for line in [
         "watch: call the teamwire_watch tool with team <team>",
@@ -1728,13 +1679,12 @@ fn the_skill_states_the_rules_the_audit_found_missing() {
         "has\n   one owner. Name that owner in both briefs.",
         "apps that comment on the pull request",
         "list each member's `setup` in the\n   closer's task",
-        "teamwire pr-watch --deliver <team> -R OWNER/REPO -i 45 3453 3454",
         "`teamwire_pr_watch`",
         "brought in by merge <sha> of <branch>",
         "A brief never offers it a worktree. It runs tests in its own clone.",
         "gets a waiver per flag",
         "teamwire turns\non auto-compact for every Claude Code member",
-        "teamwire sets no compaction for Codex and pi",
+        "teamwire sets no compaction for pi",
         "Put the whole brief, the shared parts too, in each `task_file`.",
         "Each `--add` spec stands alone",
         "A login, update or trust dialog needs the user",
@@ -1742,7 +1692,7 @@ fn the_skill_states_the_rules_the_audit_found_missing() {
         "command still hands off",
         "Launch counts every implementer not\n  yet removed",
         "This section describes Claude Code.",
-        "For a Codex or pi member, write the tdd",
+        "For a pi member, write the tdd",
         "**A turn that died.**",
         "Verify runs `check` with `sh -c`",
         "AFK runs are the one exception",
@@ -1917,9 +1867,8 @@ fn the_speckit_guidance_states_afk_untested_parts_and_the_tested_build() {
     }
     assert!(afk.contains("stop before step 2"), "{afk}");
     for needed in [
-        "No run has tested two parts of this section",
+        "No run has tested one part of this section",
         "A split per user story",
-        "Codex as a member",
         "spec-kit 1.3.3.dev0 at commit c438494",
     ] {
         assert!(section.contains(needed), "the section lacks {needed}");

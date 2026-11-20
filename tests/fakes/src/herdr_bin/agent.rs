@@ -54,13 +54,6 @@ fn claude_program() -> PathBuf {
     }
 }
 
-/// What `--kind codex` runs: a shell that draws Codex's composer, reports
-/// itself idle, and waits. It ignores the arguments, which the newline rule
-/// and the recorded `argv` already cover.
-const CODEX_SCRIPT: &str = r#"printf '› \n  gpt-5 · ? for shortcuts\n'
-printf '{"status":"idle","seq":1}' > "$FAKE_PANE_DIR/status.json"
-exec sleep 300"#;
-
 /// Starts `program` with `args` as the program of `pane`, its screen in the
 /// pane directory `dir`, and returns its process id.
 #[expect(
@@ -129,10 +122,10 @@ pub(super) fn start(ctx: &mut Ctx<'_>, args: &Args) -> Result<Value, CliError> {
         .ok_or_else(|| fail("invalid_params", "agent start needs a name"))?
         .to_owned();
     let kind = args.value("kind").unwrap_or("claude");
-    if !matches!(kind, "claude" | "codex") {
+    if kind != "claude" {
         return Err(fail(
             "unsupported_agent_kind",
-            format!("fake-herdr starts only claude and codex, not {kind}"),
+            format!("fake-herdr starts only claude, not {kind}"),
         ));
     }
     let pane_id = args
@@ -173,15 +166,7 @@ pub(super) fn start(ctx: &mut Ctx<'_>, args: &Args) -> Result<Value, CliError> {
     }
     let dir = pane_dir(ctx.state_path, &pane_id);
     std::fs::remove_dir_all(&dir).ok();
-    let (program, agent_args) = if kind == "codex" {
-        (
-            PathBuf::from("sh"),
-            vec!["-c".to_owned(), CODEX_SCRIPT.to_owned()],
-        )
-    } else {
-        (claude_program(), args.tail.clone())
-    };
-    let pid = spawn_in_pane(&dir, &pane, &program, &agent_args)?;
+    let pid = spawn_in_pane(&dir, &pane, &claude_program(), &args.tail)?;
     let hint = args
         .tail
         .windows(2)
@@ -213,12 +198,7 @@ pub(super) fn start(ctx: &mut Ctx<'_>, args: &Args) -> Result<Value, CliError> {
     ctx.relock()?;
     ready?;
     let pane = pane_now(ctx, &pane_id)?;
-    let program = if kind == "codex" {
-        "codex".to_owned()
-    } else {
-        claude_program().display().to_string()
-    };
-    let mut argv = vec![program];
+    let mut argv = vec![claude_program().display().to_string()];
     argv.extend(args.tail.iter().cloned());
     Ok(json!({
         "type": "agent_started",

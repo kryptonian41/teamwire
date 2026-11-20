@@ -43,7 +43,6 @@ teamwire/
 │   ├── teamwire-host-herdr/
 │   ├── teamwire-host-tmux/
 │   ├── teamwire-harness-claude/
-│   ├── teamwire-harness-codex/
 │   ├── teamwire-harness-pi/
 │   ├── teamwire-deliver/
 │   ├── teamwire-msg/
@@ -65,7 +64,6 @@ teamwire/
     ├── skills/teamwire/SKILL.md   the lead's skill; `teamwire install` embeds it
     ├── skills/teamwire/reference.md  the skill's lookup tables, embedded too
     ├── skills/afk/SKILL.md        the AFK skill (Claude Code leads only)
-    ├── skills/codex-lead.md       the Codex lead's changes to the skill
     ├── presets/*.json             the six team shapes and three steps
     └── mcp/lead.json              the lead MCP server, which the teamwire
                                    plugin carries; never merged into a
@@ -127,7 +125,8 @@ names, or by default the crates with files that differ from the base
 unstaged and untracked), it tests those crates and every workspace crate that
 depends on them, dev-dependencies included. It prints the base it used. With
 none of the three refs it exits 1 and names `TEAMWIRE_BASE`. A change under
-`examples/` also tests `teamwire-harness-codex`, which embeds the skill files.
+`examples/` also tests `teamwire-cli` and `teamwire-harness-claude`, which
+embed the presets and the skill files.
 The script never reads standard input. The end-to-end and
 crash test crates count as dependents. It builds the tests, the fakes and the
 CLI binary in one command, then runs `cargo test --locked -p ...` with
@@ -311,7 +310,7 @@ A crate may depend only on crates in lower layers. `cargo xtask tidy` reads
 | --- | --- | --- |
 | 0 | `teamwire-core` | external crates only |
 | 1 | `teamwire-store`, `teamwire-platform` | 0 |
-| 2 | `teamwire-host-herdr`, `teamwire-host-tmux`, `teamwire-harness-claude`, `teamwire-harness-codex`, `teamwire-harness-pi` | 0, `teamwire-platform` |
+| 2 | `teamwire-host-herdr`, `teamwire-host-tmux`, `teamwire-harness-claude`, `teamwire-harness-pi` | 0, `teamwire-platform` |
 | 3 | `teamwire-deliver`, `teamwire-verify` | 0, 1 |
 | 4 | `teamwire-msg`, `teamwire-report`, `teamwire-launch`, `teamwire-watch`, `teamwire-otel`, `teamwire-close` | 0, 1, 3. No layer-4 crate depends on another; `teamwire-close` reads what launch recorded from the store |
 | 5 | `teamwire-mcp` | 0, 1, 3, 4 |

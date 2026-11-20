@@ -131,32 +131,11 @@ pub(super) fn events_check(base: &Base<'_>) -> Check {
             "{settings} has a hook tagged \"__speckit_event__\": true"
         ));
     }
-    let config = ".codex/config.toml";
-    if base
-        .show(config)
-        .ok()
-        .flatten()
-        .is_some_and(|text| text.contains("speckit_marker = true"))
-    {
-        hooks.push(format!("{config} has a hook marked speckit_marker = true"));
-    }
     let dispatcher = ".specify/events.py";
     if base.has(dispatcher) {
         hooks.push(format!("{dispatcher} is the script those hooks run"));
     }
-    // The two files Codex launch refuses (`teamwire-harness-codex` `OWN_CONFIG_FILES`),
-    // committed or only on disk.
-    let mut codex = Vec::new();
-    let mut codex_committed = false;
-    for file in [config, ".codex/hooks.json"] {
-        if base.has(file) {
-            codex_committed = true;
-            codex.push(format!("{file} is in {at}"));
-        } else if base.root.join(file).exists() {
-            codex.push(format!("{file} is on disk but not in {at}"));
-        }
-    }
-    if hooks.is_empty() && codex.is_empty() {
+    if hooks.is_empty() {
         let note = if declared.is_empty() {
             String::new()
         } else {
@@ -171,51 +150,34 @@ pub(super) fn events_check(base: &Base<'_>) -> Check {
             format!("no spec-kit runtime event is set up in {at}{note}"),
         );
     }
-    let mut found = Vec::new();
-    let mut actions = Vec::new();
-    if !hooks.is_empty() {
-        found.push(format!(
-            "in {at}, {}; each runs a spec-kit script from the agent's own hooks in every \
-             member session",
-            hooks.join(", ")
-        ));
-        let mut keys = integration_keys(base);
-        if keys.is_empty() {
-            keys.push("<key>".to_owned());
-        }
-        let upgrade = keys
-            .iter()
-            .map(|k| {
-                format!("`specify integration upgrade {k} --force --integration-options=\"--events false\"`")
-            })
-            .collect::<Vec<_>>()
-            .join(" and ");
-        actions.push(if declared.is_empty() {
-            format!("run {upgrade}")
-        } else {
-            let ids = declared.join(" ");
+    let found = format!(
+        "in {at}, {}; each runs a spec-kit script from the agent's own hooks in every member \
+         session",
+        hooks.join(", ")
+    );
+    let mut keys = integration_keys(base);
+    if keys.is_empty() {
+        keys.push("<key>".to_owned());
+    }
+    let upgrade = keys
+        .iter()
+        .map(|k| {
             format!(
-                "run `specify extension remove {ids}` (or `specify extension disable {ids}`), or {upgrade}"
+                "`specify integration upgrade {k} --force --integration-options=\"--events false\"`"
             )
-        });
-    }
-    if !codex.is_empty() {
-        found.push(format!(
-            "{}, and teamwire refuses to start a Codex member while it is",
-            codex.join(", ")
-        ));
-        if hooks.is_empty() {
-            actions.push("remove it from the repository".to_owned());
-        }
-    }
-    // A file only on disk was never committed, so removing it needs no commit.
-    let then = if hooks.is_empty() && !codex_committed {
-        String::new()
+        })
+        .collect::<Vec<_>>()
+        .join(" and ");
+    let action = if declared.is_empty() {
+        format!("run {upgrade}")
     } else {
-        format!(", then commit on {}", base.name)
+        let ids = declared.join(" ");
+        format!(
+            "run `specify extension remove {ids}` (or `specify extension disable {ids}`), or {upgrade}"
+        )
     };
     Check::warn(
         name,
-        format!("{}; {}{then}", found.join("; "), actions.join(", ")),
+        format!("{found}; {action}, then commit on {}", base.name),
     )
 }

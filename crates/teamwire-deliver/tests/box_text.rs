@@ -33,10 +33,7 @@ impl Harness for BoxReader {
         self.0.id()
     }
     fn capabilities(&self) -> HarnessCaps {
-        HarnessCaps {
-            reads_input_box: true,
-            ..self.0.capabilities()
-        }
+        self.0.capabilities()
     }
     fn launch_spec(&self, m: &MemberLaunch) -> Result<LaunchSpec, HarnessError> {
         self.0.launch_spec(m)

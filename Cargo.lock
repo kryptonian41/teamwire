@@ -1493,7 +1493,6 @@ dependencies = [
  "teamwire-deliver",
  "teamwire-fakes",
  "teamwire-harness-claude",
- "teamwire-harness-codex",
  "teamwire-harness-pi",
  "teamwire-host-herdr",
  "teamwire-host-tmux",
@@ -1611,24 +1610,6 @@ dependencies = [
  "time",
  "tracing",
  "uuid",
-]
-
-[[package]]
-name = "teamwire-harness-codex"
-version = "0.0.0"
-dependencies = [
- "hex",
- "serde",
- "serde_json",
- "sha2",
- "teamwire-core",
- "teamwire-fakes",
- "teamwire-platform",
- "tempfile",
- "thiserror",
- "time",
- "toml",
- "tracing",
 ]
 
 [[package]]

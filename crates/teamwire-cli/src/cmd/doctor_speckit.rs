@@ -36,7 +36,7 @@ const INTEGRATION_FILE: &str = ".specify/integration.json";
 
 /// The folders `ls-tree` lists: spec-kit's own, and where the harnesses
 /// teamwire runs keep spec-kit's commands and hooks.
-const LISTED: [&str; 5] = [".specify", ".claude", ".agents", ".pi", ".codex"];
+const LISTED: [&str; 3] = [".specify", ".claude", ".pi"];
 
 /// The spec-kit checks, or none outside a spec-kit repository.
 pub(crate) fn speckit_checks(inputs: &Inputs<'_>) -> Vec<Check> {

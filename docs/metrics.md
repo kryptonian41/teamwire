@@ -17,7 +17,7 @@ the OpenTelemetry naming rules (dot-separated, units in the unit field).
 | `member.replaced` | a failed member's role is launched again | the failed attempt's `reason` and times |
 | `member.reprompted` | a reprompt raises the generation | `generation`, `message` |
 | `member.woken` | a message other than a reprompt raises the generation of a finished member (ADR 0043); not a reprompt, so no reprompt metric counts it | `generation`, `message`; an undo after a known delivery failure adds `undone: true` |
-| `member.handoff` | `teamwire handoff` gives a member a fresh session (ADR 0027) | `generation` (the new one), `old_session`, `new_session` (null when the harness picks its own id), `place` |
+| `member.handoff` | `teamwire handoff` gives a member a fresh session (ADR 0027) | `generation` (the new one), `old_session`, `new_session` (null only in an event an older build wrote for a harness that picked its own id), `place` |
 | `member.completed` | `done` stores a completion | `status`, `generation`, `n` |
 | `member.completion_refused` | `done` refuses (invalid status, gaps on a hook-less harness) | `reason` |
 | `member.held` | the report check or unread messages hold a member | `gaps`, `unread` |
@@ -35,7 +35,7 @@ the OpenTelemetry naming rules (dot-separated, units in the unit field).
 | `watch.started`, `watch.line`, `watch.stopped` | the watch starts, prints, exits | `pid`, `host` (started); `events` (list of event names in the line); `reason`, `polls` (stopped) |
 | `verify.recorded`, `verify.waived` | a verify record; a waiver | `verdict`, `flags`, `exit`, `seconds`, `head_sha` (recorded) |
 | `close.step`, `close.refused` | each close step; a refusal | `step`, `outcome`, `reason` |
-| `store.error` | a failed transaction with code busy, full, corrupt or io (a write, or a read of a store opened for writing), written after the rollback by the command, hook, MCP tool or watch poll that hit it; never for a read-only store or a refused schema. A delivery to another team that opens that team's store records its failure there, with `op` `send` or `resend`. A failure while a store is being opened writes no row, because an open that fails has no connection, an unreadable header, or a file not yet at this binary's schema, which `record_failure` never writes to, and a busy header read means the database stayed locked past the 5 s busy timeout, so a second write would fail the same way; the failure is still reported where it happens | `op` (the command, MCP tool, `turn_end`, `post_tool`, `session_start`, `watch`, `send` or `resend`), `code` |
+| `store.error` | a failed transaction with code busy, full, corrupt or io (a write, or a read of a store opened for writing), written after the rollback by the command, hook, MCP tool or watch poll that hit it; never for a read-only store or a refused schema. A delivery to another team that opens that team's store records its failure there, with `op` `send` or `resend`. A failure while a store is being opened writes no row, because an open that fails has no connection, an unreadable header, or a file not yet at this binary's schema, which `record_failure` never writes to, and a busy header read means the database stayed locked past the 5 s busy timeout, so a second write would fail the same way; the failure is still reported where it happens | `op` (the command, MCP tool, `turn_end`, `post_tool`, `watch`, `send` or `resend`), `code` |
 
 The `close.step` rows in an archived database end at `finish`: `archive_final` and `delete_state` run after the archive is copied.
 
@@ -71,7 +71,7 @@ eight values.
 | `teamwire.holds` | counter | `{hold}` | `team`, `reason` (`progress_lines`, `decisions`, `report_missing`, `unread`) | How often does the report check fire, and for what? |
 | `teamwire.member.run.duration` | histogram | `s` | `team`, `kind`, `status` | How long does a member generation take? |
 | `teamwire.member.reprompts` | counter | `{reprompt}` | `team`, `kind` | How much extra work goes to finished members? |
-| `teamwire.member.tokens` | counter | `{token}` | `team`, `role`, `kind`, `model`, `effort`, `task_class`, `type` (`input`, `output`, `cache_read`, `cache_creation`) | How many tokens does each member use? Read from `data.usage` on `result.delivering`, which holds the session's running totals. Each event counts what it adds to the previous one of the same `data.session`, so the sum is the newest totals. `effort` is the member's effort from its latest `member.started` event, or `unset` when none was recorded. Subagent transcripts, in `<session-id>/subagents/*.jsonl` beside the main transcript, are counted with it, once per `message.id`. A pi member's reading comes from its pi session file, every assistant message once, with all four types. A Codex member's comes from the newest `total_token_usage` in its rollout: `input` leaves out the cached tokens, which are `cache_read`; `output` includes reasoning; `cache_creation` is always 0, because Codex reports no cache writes; and a session that changed model counts every token under its newest model. A team whose lead route is the watch (host `none`) records no tokens. |
+| `teamwire.member.tokens` | counter | `{token}` | `team`, `role`, `kind`, `model`, `effort`, `task_class`, `type` (`input`, `output`, `cache_read`, `cache_creation`) | How many tokens does each member use? Read from `data.usage` on `result.delivering`, which holds the session's running totals. Each event counts what it adds to the previous one of the same `data.session`, so the sum is the newest totals. `effort` is the member's effort from its latest `member.started` event, or `unset` when none was recorded. Subagent transcripts, in `<session-id>/subagents/*.jsonl` beside the main transcript, are counted with it, once per `message.id`. A pi member's reading comes from its pi session file, every assistant message once, with all four types. A team whose lead route is the watch (host `none`) records no tokens. |
 | `teamwire.members.live` | gauge | `{member}` | `team`, `state` | How many members are running now? |
 | `teamwire.launch.members` | counter | `{member}` | `team`, `outcome` (`started`, `failed`, `refused`; a refusal of the whole spec writes no event), `reason` (the event's `reason_code`: for `failed` a step name, `registry`, `prepare`, `record`, `worktree`, `setup`, `harness`, `files`, `spawn`, `place`, `trust`, `started`; for `refused` `afk_budget_spent` or `team_closed`; else `other`; `none` when started) | Why do launches fail? |
 | `teamwire.launch.duration` | histogram | `s` | `team`, `step` (`worktree`, `setup`, `spawn`, `trust`, `dispatch`) | Which launch step is slow? Read from `data.steps` (milliseconds per step) on `member.started`, `member.failed` and `member.refused`. |
@@ -134,9 +134,7 @@ and one warning says so.
 
 In each Claude Code member's environment (OBS-4), appended to any existing value:
 `OTEL_RESOURCE_ATTRIBUTES=...,teamwire.team=<team>,teamwire.role=<role>`.
-Nothing per run or per message goes there. A Codex member's environment gets no
-OpenTelemetry variable (ADR 0023, decision 11), and its metrics still come from
-the event rows.
+Nothing per run or per message goes there.
 
 ## 5. Fields the event data carries for derived metrics
 
@@ -156,8 +154,8 @@ wave-1 contract:
   `outcome=refused` (ADR 0026). A member refused after launch recorded it keeps
   a `failed` row and has no `member.failed` event, so it is counted once.
 - The last event a hook run writes (the `result.*` outcome or `member.held`)
-  carries `data.hook` (`claude-stop` for a `claude-code` member,
-  `codex-stop` for a `codex` member, else `<harness id>-stop`) and
+  carries `data.hook` (`claude-stop` for a `claude-code` member, else
+  `<harness id>-stop`) and
   `data.hook_ms`; only then is the run's duration known. Only the turn-end
   hook is measured: the post-tool hook's reminder event
   (`delivery.reminded`) carries no duration.

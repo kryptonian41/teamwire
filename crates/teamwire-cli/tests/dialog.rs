@@ -419,7 +419,7 @@ fn an_answer_no_hook_takes_exits_7() {
 }
 
 #[test]
-fn a_codex_member_is_refused_with_refused_harness() {
+fn a_pi_member_is_refused_with_refused_harness() {
     let rig = Rig::new();
     let from = launched(&rig, "done");
     let at = now();
@@ -429,10 +429,10 @@ fn a_codex_member_is_refused_with_refused_harness() {
                 at,
                 &NewMember {
                     role: role("cx"),
-                    title: "codex work".to_owned(),
+                    title: "pi work".to_owned(),
                     kind: MemberKind::Implementer,
                     mode: Mode::Pane,
-                    harness: HarnessId::from_static("codex"),
+                    harness: HarnessId::from_static("pi"),
                     host: HostId::from_static("herdr"),
                     cwd: std::env::temp_dir(),
                     repo: None,
@@ -466,7 +466,7 @@ fn a_codex_member_is_refused_with_refused_harness() {
     assert_eq!(run.code, 1, "{}", run.all());
     assert!(
         run.err
-            .contains("refused.harness: harness codex cannot answer a dialog"),
+            .contains("refused.harness: harness pi cannot answer a dialog"),
         "{}",
         run.err
     );

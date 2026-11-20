@@ -214,8 +214,7 @@ pub(crate) struct WatchArgs {
     /// Run one poll and exit.
     #[arg(long)]
     pub(crate) once: bool,
-    /// Also type each line into the lead's pane, for a lead that cannot read
-    /// the watch's output as it is printed (a Codex lead, ADR 0023).
+    /// Also type each line into the lead's pane (ADR 0054, decision 8).
     #[arg(long)]
     pub(crate) deliver: bool,
 }
@@ -476,8 +475,7 @@ pub(crate) struct PrWatchArgs {
     /// Seconds between polls.
     #[arg(short = 'i', long = "interval", value_name = "SECONDS")]
     pub(crate) interval: Option<u64>,
-    /// Also type each line into this team's lead pane, for a lead that
-    /// cannot read the output as it is printed (a Codex lead, ADR 0039).
+    /// Also type each line into this team's lead pane (ADR 0039).
     #[arg(long, value_name = "TEAM")]
     pub(crate) deliver: Option<String>,
     #[arg(value_name = "PR", required = true)]
@@ -495,7 +493,7 @@ pub(crate) struct InstallArgs {
     #[arg(long)]
     pub(crate) force: bool,
     /// The harnesses to install the lead setup for, comma-separated
-    /// (`claude-code`, `codex`, `pi`). Without it, a terminal shows a selector of
+    /// (`claude-code`, `pi`). Without it, a terminal shows a selector of
     /// the harnesses found on PATH, and anything else installs `claude-code`.
     #[arg(long, value_delimiter = ',', value_name = "ID")]
     pub(crate) harness: Vec<String>,
@@ -621,8 +619,6 @@ pub(crate) enum HookCommand {
     TurnEnd(HookTarget),
     #[command(about = "A member's PostToolUse hook, on the member's own harness.")]
     PostTool(HookTarget),
-    #[command(about = "A member's SessionStart hook: record the session id the harness chose.")]
-    SessionStart(HookTarget),
     #[command(
         about = "A member's PermissionRequest hook: record the call, wait for the lead's answer, print it."
     )]

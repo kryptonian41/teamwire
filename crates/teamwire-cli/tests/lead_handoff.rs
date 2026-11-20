@@ -307,7 +307,7 @@ fn a_dry_run_names_the_plan_and_changes_nothing() {
         OLD,
         &[
             ("CLAUDE_CONFIG_DIR", "/cfg/claude"),
-            ("CODEX_HOME", "/cfg/codex"),
+            ("PI_CODING_AGENT_DIR", "/cfg/pi"),
         ],
         &["lead", "--handoff", "--dry-run"],
     );
@@ -318,7 +318,7 @@ fn a_dry_run_names_the_plan_and_changes_nothing() {
         "{}",
         run.out
     );
-    assert!(!run.out.contains("CODEX_HOME"), "{}", run.out);
+    assert!(!run.out.contains("PI_CODING_AGENT_DIR"), "{}", run.out);
 }
 
 #[test]

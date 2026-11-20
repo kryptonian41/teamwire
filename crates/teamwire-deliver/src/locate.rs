@@ -46,8 +46,10 @@ pub fn locate(ctx: &Ctx<'_>, party: &Party) -> Result<Place, DeliveryError> {
 }
 
 /// The place where `session` runs now, by the same two views as `locate`,
-/// for a session no store records yet: the lead of a team that launch has
-/// not created (ADR 0023 point 9).
+/// for a session the caller names by its id instead of a store's member or
+/// lead record. A lead handoff (ADR 0051) uses it to find the old lead's
+/// pane, to prove the new lead runs in the new pane, and to find the old
+/// pane again before it closes that pane.
 pub fn locate_session(
     platform: &dyn Platform,
     clock: &dyn Clock,

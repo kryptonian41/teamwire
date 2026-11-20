@@ -6,9 +6,7 @@
 use std::path::Path;
 
 use serde_json::Value;
-use teamwire_core::{
-    CarryRules, HarnessError, HarnessErrorCode, LeadStart, LeadStartSpec, SessionId, carry,
-};
+use teamwire_core::{CarryRules, LeadStart, LeadStartSpec, SessionId, carry};
 
 use crate::fill::{find_transcript, tail_lines};
 
@@ -26,7 +24,6 @@ const RULES: CarryRules<'static> = CarryRules {
         "--verbose",
     ],
     with_value: &[MODE, MODEL, "--effort", "--fallback-model"],
-    keyed: &[],
     replaced: &[
         ("--session-id", true),
         ("--resume", true),
@@ -53,17 +50,8 @@ const MODES: [&str; 6] = [
     "plan",
 ];
 
-pub(crate) fn lead_start(
-    claude_bin: &str,
-    claude_dir: &Path,
-    req: &LeadStart,
-) -> Result<LeadStartSpec, HarnessError> {
-    let new = req.new_session.as_ref().ok_or_else(|| {
-        HarnessError::new(
-            HarnessErrorCode::BadInput,
-            "a Claude Code lead start needs the new session's id",
-        )
-    })?;
+pub(crate) fn lead_start(claude_bin: &str, claude_dir: &Path, req: &LeadStart) -> LeadStartSpec {
+    let new = &req.new_session;
     let (mut carried, mut dropped) = carry(&req.old_args, &RULES);
     let mut warnings = Vec::new();
     let (mode, model) = transcript_values(claude_dir, &req.old_session);
@@ -92,11 +80,11 @@ pub(crate) fn lead_start(
     ];
     argv.extend(carried);
     argv.push(req.prompt.clone());
-    Ok(LeadStartSpec {
+    LeadStartSpec {
         argv,
         dropped,
         warnings,
-    })
+    }
 }
 
 /// The newest `permissionMode`, whatever its value, and the newest model of

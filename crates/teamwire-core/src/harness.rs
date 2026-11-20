@@ -33,10 +33,7 @@ pub trait Harness: Send + Sync {
     /// configuration (shown by `status --role`, never run by teamwire).
     fn resume_spec(&self, m: &MemberLaunch, s: &SessionId) -> Result<LaunchSpec, HarnessError>;
     /// The caller's own session, read through `get`: the process
-    /// environment for a command (`|name| std::env::var(name).ok()`). The
-    /// lead's MCP server also answers `MCP_META_<key>` with a string field of
-    /// the request's `_meta`, for a harness that names the session only there
-    /// (Codex, ADR 0023).
+    /// environment (`|name| std::env::var(name).ok()`).
     fn caller_session(&self, get: &dyn Fn(&str) -> Option<String>) -> Option<CallerSession>;
     /// The argv that resumes the lead's own session: a plain resume, with no
     /// per-run files, because the lead loads the teamwire plugin itself. The
@@ -102,6 +99,8 @@ pub trait Harness: Send + Sync {
         Err(HarnessError::unsupported())
     }
     /// Classify a screen tail: at the input prompt, showing a dialog, or unknown.
+    /// Delivery reads the tail with `Host::read_tail_styled`, so it can hold
+    /// style codes.
     fn screen_state(&self, tail: &str) -> ScreenState;
     /// Whether `line`, just submitted, still sits unsent in the input box
     /// shown by `tail`. The default is `false`: a harness that cannot tell
@@ -112,7 +111,9 @@ pub trait Harness: Send + Sync {
     }
     /// Whether the input box shown by `tail` already holds text, such as a
     /// line a person half typed. Delivery waits while it does, on every host.
-    /// The default is `false`: a harness that cannot tell types as before.
+    /// `tail` comes from `Host::read_tail_styled`, so a harness can tell dim
+    /// placeholder text from typed text by its style codes. The default is
+    /// `false`: a harness that cannot tell types as before.
     fn box_holds_text(&self, _tail: &str) -> bool {
         false
     }
@@ -231,16 +232,10 @@ pub struct HarnessCaps {
     pub turn_end_hook: bool,
     pub in_turn_hook: bool,
     pub mcp_client: bool,
-    pub choose_session_id: bool,
     pub can_push: bool,
     /// Environment for the session can be set in a per-run
     /// config file (Claude Code `settings.json` `env`).
     pub session_env_via_config: bool,
-    /// A lead on this harness can run `teamwire watch` and read each line as
-    /// it is printed (Claude Code's Monitor tool). Without it the lead needs
-    /// `teamwire watch --deliver`, which types the lines into its pane, so
-    /// launch refuses such a lead when it cannot be located (ADR 0023).
-    pub reads_watch_lines: bool,
     /// How a lead on this harness starts `teamwire watch`. Every text that
     /// tells a lead to start a watch is worded from it.
     pub watch_start: WatchStart,
@@ -249,12 +244,6 @@ pub struct HarnessCaps {
     /// harness that cannot lead. Never read back from JSON.
     #[serde(skip_deserializing)]
     pub load_skill: &'static str,
-    /// `Harness::box_holds_text` can tell anything. Delivery on a host that
-    /// guards dialogs reads the screen only when it can, so a harness that
-    /// cannot costs no extra read. Delivery gives a harness that reads the
-    /// box its screens from `Host::read_tail_styled`, in `screen_state` and
-    /// `box_holds_text` both, so they must parse style codes.
-    pub reads_input_box: bool,
     /// A lead on this harness can start an AFK run: its skill carries the
     /// AFK flow, and its pane can be proven to reach the lead (AFK-2).
     pub runs_afk: bool,
@@ -284,9 +273,6 @@ string_enum! {
         /// The lead runs the command under a tool that hands it each line
         /// as the command prints it.
         MonitoredCommand => "monitored_command",
-        /// The lead runs the command in the background with `--deliver`, and
-        /// the watch types each line into the lead's pane (ADR 0023).
-        BackgroundCommand => "background_command",
         /// The lead calls a tool of teamwire's lead extension, which runs the
         /// watch and hands the lead each line (ADR 0036).
         ExtensionTool => "extension_tool",
@@ -356,10 +342,6 @@ pub struct MemberLaunch {
     /// member's compaction backstop is set from it (and from the model).
     #[serde(default)]
     pub context_handoff_tokens: Option<u64>,
-    /// The spec's `accept_trust`. Read by a harness that takes folder trust
-    /// as a start option rather than answering a dialog (Codex, ADR 0023).
-    #[serde(default)]
-    pub accept_trust: bool,
 }
 
 impl MemberLaunch {
@@ -393,8 +375,6 @@ impl MemberLaunch {
             plugins: BTreeMap::new(),
             // A resume never rewrites the per-run files.
             context_handoff_tokens: None,
-            // The member started once, so its folder was accepted then.
-            accept_trust: true,
         }
     }
 }
@@ -415,20 +395,6 @@ impl MemberLaunch {
     pub fn scratch_dir(&self) -> Option<PathBuf> {
         let home = self.home_from_member_dir()?;
         Some(team_scratch_dir(Path::new(&home), &self.team).join(self.role.as_str()))
-    }
-
-    /// A resume's launch with what the first start recorded beyond the model:
-    /// the `teamwire` binary and the plugin switches. A harness that carries
-    /// hook and MCP commands in argv (Codex) needs both to match the start.
-    #[must_use]
-    pub fn with_run_context(
-        mut self,
-        teamwire_bin: PathBuf,
-        plugins: BTreeMap<String, bool>,
-    ) -> Self {
-        self.teamwire_bin = teamwire_bin;
-        self.plugins = plugins;
-        self
     }
 }
 
@@ -569,7 +535,6 @@ impl fmt::Debug for MemberLaunch {
             .field("teamwire_bin", &self.teamwire_bin)
             .field("plugins", &self.plugins)
             .field("context_handoff_tokens", &self.context_handoff_tokens)
-            .field("accept_trust", &self.accept_trust)
             .finish()
     }
 }
@@ -664,7 +629,6 @@ mod tests {
             teamwire_bin: PathBuf::from("teamwire"),
             plugins: BTreeMap::new(),
             context_handoff_tokens: None,
-            accept_trust: false,
         };
         assert_eq!(
             launch.scratch_dir(),

@@ -134,23 +134,17 @@ fn check_input_ready(
         return Err(blocked("the harness"));
     }
     if host.capabilities().guards_dialogs {
-        if harness.capabilities().reads_input_box {
-            return check_box_empty(harness, host, place, budget);
-        }
-        return Ok(());
+        return check_box_empty(harness, host, place, budget);
     }
     // A screen the harness cannot read yet (a redraw, a slow start) is read
     // again a few times, as a busy host is. A dialog is final at once.
     for tries in 1..=MAX_TRIES {
         let timeout = budget.call()?;
-        // A harness that reads the input box tells dim placeholder text from
-        // typed text by its style codes.
-        let tail = if harness.capabilities().reads_input_box {
-            host.read_tail_styled(place, TAIL_LINES, timeout)
-        } else {
-            host.read_tail(place, TAIL_LINES, timeout)
-        }
-        .map_err(DeliveryError::from)?;
+        // The harness tells dim placeholder text from typed text by its
+        // style codes.
+        let tail = host
+            .read_tail_styled(place, TAIL_LINES, timeout)
+            .map_err(DeliveryError::from)?;
         match harness.screen_state(&tail) {
             ScreenState::InputPrompt => return Ok(()),
             ScreenState::Unknown if tries < MAX_TRIES => {

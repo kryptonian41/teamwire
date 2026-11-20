@@ -321,12 +321,9 @@ mod tests {
             user_home: None,
             claude_dir: None,
             claude_config_dir: None,
-            codex_test_home: None,
-            codex_home: None,
             pi_agent_dir: None,
             lead_harness: None,
             claude_session: None,
-            codex_thread: None,
             pi_marker: None,
         })
         .unwrap();
@@ -436,19 +433,6 @@ mod tests {
         );
         assert!(none.starts_with("no watch is running"), "{none}");
         assert!(none.contains("`teamwire watch "), "{none}");
-    }
-
-    #[test]
-    fn a_lead_that_cannot_read_watch_lines_is_told_to_deliver_in_the_background() {
-        let line = watch_line(
-            &team(),
-            &watch_state(Ok(None)),
-            WatchStart::BackgroundCommand,
-        );
-        assert!(
-            line.contains("`nohup teamwire watch alpha --deliver >/dev/null 2>&1 &`"),
-            "{line}"
-        );
     }
 
     #[test]

@@ -27,10 +27,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::Rig;
-use teamwire_core::harness::WatchStart;
 use teamwire_core::{
-    Clock, Config, HarnessCaps, HarnessError, HarnessId, HostCaps, HostError, HostErrorCode,
-    Liveness, Occupant, Pid, Place, PlaceState, SessionId, SessionKind, SplitRequest, TeamName,
+    Clock, Config, HarnessError, HarnessId, HostCaps, HostError, HostErrorCode, Liveness, Occupant,
+    Pid, Place, PlaceState, SessionId, SessionKind, SplitRequest, TeamName,
 };
 use teamwire_fakes::{FakeHarness, FakeHost, Fault};
 use teamwire_launch::{
@@ -158,7 +157,6 @@ fn waits() -> LeadHandoffWaits {
     LeadHandoffWaits {
         pause: Duration::from_millis(1),
         prove: Duration::from_millis(20),
-        adopt: Duration::from_millis(20),
     }
 }
 
@@ -355,116 +353,6 @@ fn the_first_prompt_points_at_the_document_and_names_each_team() {
     );
 }
 
-/// A harness that picks its own session id, like Codex: the new lead
-/// adopts each team itself, and the command waits for that.
-/// The new lead picks its own session id, and adopts the teams in `adopts`.
-fn picks_its_own_id(rig: &Rig, adopts: &'static [&'static str]) {
-    rig.harness.set_caps(HarnessCaps {
-        choose_session_id: false,
-        watch_start: WatchStart::BackgroundCommand,
-        ..FakeHarness::caps()
-    });
-    let home = rig.home.path().to_path_buf();
-    let harness = Arc::clone(&rig.harness);
-    let platform = Arc::clone(&rig.platform);
-    rig.host
-        .on_split(move |host: &FakeHost, place: &Place, _req: &SplitRequest| {
-            let new = sid("picked-by-the-harness");
-            harness.add_session(new.clone(), vec![Pid::new(NEW_PID)], alive());
-            platform.inner.set_alive(Pid::new(NEW_PID), true);
-            platform
-                .inner
-                .set_env(Pid::new(NEW_PID), "FAKE_PLACE_ID", &place.id);
-            host.set_occupant(
-                place,
-                Occupant {
-                    session: Some(new.clone()),
-                    pids: vec![Pid::new(NEW_PID)],
-                },
-            );
-            for name in adopts {
-                let mut store =
-                    Store::open_existing(&home, &TeamName::parse(name).unwrap()).unwrap();
-                store
-                    .write(|tx| {
-                        tx.adopt_lead(
-                            teamwire_core::Timestamp::from_unix_millis(1_800_000_000_000).unwrap(),
-                            &new,
-                            SessionKind::Interactive,
-                        )
-                        .map(|_| ())
-                    })
-                    .unwrap();
-            }
-        });
-}
-
-#[test]
-fn a_lead_that_picks_its_own_id_adopts_each_team_and_the_command_waits_for_it() {
-    let rig = Rig::new();
-    team(&rig, "alpha", "Fix the prompts", false);
-    team(&rig, "beta", "Second team", false);
-    let old = old_lead(&rig);
-    picks_its_own_id(&rig, &["alpha", "beta"]);
-
-    let (said, result) = run(&rig);
-    assert_eq!(result, Ok(()), "{}", text(&said));
-
-    let (_, req) = split_pane(&rig, &old);
-    assert_eq!(rig.harness.lead_starts()[0].new_session, None);
-    // A lead that runs its watch in the background is told so.
-    assert!(
-        req.argv.last().unwrap().contains(
-            "(`nohup teamwire watch alpha --deliver >/dev/null 2>&1 &`; `nohup teamwire watch \
-             beta --deliver >/dev/null 2>&1 &`)"
-        ),
-        "{req:?}"
-    );
-    assert!(
-        req.argv.last().unwrap().starts_with(
-            "First run `teamwire lead --adopt <team>` for each of these teams: alpha, beta. You \
-             are a teamwire lead."
-        ),
-        "{req:?}"
-    );
-    assert_eq!(lead_of(&rig, "alpha"), Some(sid("picked-by-the-harness")));
-    assert_eq!(lead_of(&rig, "beta"), Some(sid("picked-by-the-harness")));
-    assert_eq!(
-        host_writes(&rig).last().unwrap(),
-        &format!("close_pane {}", old.id)
-    );
-}
-
-#[test]
-fn a_lead_that_never_adopts_leaves_both_panes_open() {
-    let rig = Rig::new();
-    team(&rig, "alpha", "Fix the prompts", false);
-    team(&rig, "beta", "Second team", false);
-    let old = old_lead(&rig);
-    picks_its_own_id(&rig, &[]);
-
-    let (said, result) = run(&rig);
-    let Err(HandoffError::Partial(why)) = result else {
-        panic!("{result:?} {}", text(&said));
-    };
-    assert!(why.contains("did not adopt every team"), "{why}");
-    assert!(
-        why.contains("Still led by this session: alpha, beta"),
-        "{why}"
-    );
-    assert!(
-        why.contains("`teamwire lead --adopt alpha`, `teamwire lead --adopt beta`"),
-        "{why}"
-    );
-    assert_eq!(
-        host_writes(&rig).len(),
-        1,
-        "only the split: {:?}",
-        host_writes(&rig)
-    );
-    assert!(host_writes(&rig)[0].starts_with(&format!("split_run {}", old.id)));
-}
-
 #[test]
 fn a_new_session_that_never_shows_closes_the_new_pane_and_moves_no_team() {
     let rig = Rig::new();
@@ -575,22 +463,39 @@ fn hold_starts(rig: &Rig) -> Vec<String> {
 }
 
 #[test]
-fn a_lead_that_adopts_some_teams_moves_their_sleep_hold_and_leaves_both_panes_open() {
+fn a_team_still_led_by_the_old_session_keeps_its_sleep_hold_after_a_partial_handoff() {
     let rig = Rig::new();
     team(&rig, "alpha", "Fix the prompts", false);
     team(&rig, "beta", "Second team", false);
+    team(&rig, "gamma", "Third team", false);
     old_lead(&rig);
-    picks_its_own_id(&rig, &["alpha"]);
+    // Another lead adopts beta between the plan and the adoption, so the
+    // handoff stops there: alpha has moved, gamma is never tried.
+    let home = rig.home.path().to_path_buf();
+    new_session_starts_then(&rig, move || {
+        let mut store = Store::open_existing(&home, &TeamName::parse("beta").unwrap()).unwrap();
+        store
+            .write(|tx| {
+                tx.adopt_lead(
+                    teamwire_core::Timestamp::from_unix_millis(1_800_000_000_000).unwrap(),
+                    &sid("someone-else"),
+                    SessionKind::Interactive,
+                )
+                .map(|_| ())
+            })
+            .unwrap();
+    });
 
     let (said, result) = run(&rig);
     let Err(HandoffError::Partial(why)) = result else {
         panic!("{result:?} {}", text(&said));
     };
     assert!(
-        why.contains("Moved to the new lead: alpha. Still led by this session: beta"),
+        why.contains("Moved to the new lead: alpha. Still led by this session: beta, gamma"),
         "{why}"
     );
-    assert_eq!(lead_of(&rig, "beta"), Some(sid(OLD)));
+    assert_eq!(lead_of(&rig, "gamma"), Some(sid(OLD)));
+    // gamma's hold keeps waiting on the old lead, whose pane stays open.
     assert_eq!(
         hold_starts(&rig),
         vec![NEW_PID.to_string()],
@@ -786,7 +691,6 @@ fn the_proof_wait_ends_before_a_two_minute_command_limit() {
     assert_eq!(config.spawn_timeout_s, 150);
     let waits = LeadHandoffWaits::of(&config);
     assert_eq!(waits.prove, Duration::from_secs(90));
-    assert_eq!(waits.adopt, Duration::from_secs(180));
     let lower = Config {
         spawn_timeout_s: 60,
         ..Config::default()

@@ -66,18 +66,13 @@ pub struct CallerEnv {
     pub user_key: Option<String>,
     /// The claimed sender: `--from`, a role, `lead` or `user`.
     pub from: Option<String>,
-    /// `MCP_META_<key>` values: the string fields of the MCP request's
-    /// `_meta`. Only the lead's server fills them (ADR 0023 point 8).
-    pub hints: Vec<(String, String)>,
 }
 
 impl CallerEnv {
-    /// A variable by name: a hint first, then the process environment. The
-    /// lookup a harness reads its caller's session through.
+    /// A variable of the process environment by name. The lookup a harness
+    /// reads its caller's session through.
     pub fn lookup(&self, name: &str) -> Option<String> {
-        let hint = self.hints.iter().find(|(key, _)| key == name);
-        hint.map(|(_, value)| value.clone())
-            .or_else(|| std::env::var(name).ok())
+        std::env::var(name).ok()
     }
 
     /// True when the environment says this process runs inside a member's
@@ -98,7 +93,6 @@ impl fmt::Debug for CallerEnv {
             .field("token_file", &self.token_file)
             .field("user_key", &self.user_key.as_ref().map(|_| "<redacted>"))
             .field("from", &self.from)
-            .field("hints", &self.hints)
             .finish()
     }
 }

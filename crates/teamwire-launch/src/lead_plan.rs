@@ -156,8 +156,7 @@ pub(crate) struct Planned<'r> {
     pub(crate) host: &'r dyn Host,
     pub(crate) files: HandoffFiles,
     pub(crate) old_place: Place,
-    /// `None` when the harness picks its own id, and the new lead adopts.
-    pub(crate) new_session: Option<SessionId>,
+    pub(crate) new_session: SessionId,
     pub(crate) split: SplitRequest,
     pub(crate) dropped: Vec<String>,
     pub(crate) warnings: Vec<String>,
@@ -185,17 +184,11 @@ pub(crate) fn plan<'r>(
     })?;
     let cwd = lead_folder(ctx.home, harness, &seat)?;
     let caps = harness.capabilities();
-    let new_session = if caps.choose_session_id {
-        Some(
-            SessionId::parse(&uuid::Uuid::new_v4().to_string())
-                .map_err(|e| refused(e.to_string()))?,
-        )
-    } else {
-        None
-    };
+    let new_session =
+        SessionId::parse(&uuid::Uuid::new_v4().to_string()).map_err(|e| refused(e.to_string()))?;
     let mut warnings = Vec::new();
     let old_args = old_args(ctx.platform, harness, &old).unwrap_or_else(|| {
-        // A Codex or pi lead's approval flags live only in its arguments, so
+        // A pi lead's approval flags live only in its arguments, so
         // the user must hear that none of them reach the new lead.
         warnings.push(
             "the old lead's arguments could not be read, so the new lead starts with no flag \
@@ -221,7 +214,7 @@ pub(crate) fn plan<'r>(
             prompt,
         })
     };
-    let spec: LeadStartSpec = start(new_session.is_none()).map_err(|e| {
+    let spec: LeadStartSpec = start(false).map_err(|e| {
         refused(format!(
             "the {} harness cannot start a new lead: {e}",
             seat.harness

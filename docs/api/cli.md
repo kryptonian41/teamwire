@@ -51,7 +51,7 @@ its first message. Starts or reuses the sleep hold. Accepted risk: Claude Code
 declare hooks, project MCP servers or an `apiKeyHelper`, and launch answers it,
 so those then run with the member's rights. Read a folder's `.claude/` and
 `.mcp.json` before you launch members into it for the first time. Every
-harness (Claude Code, Codex, pi) hands the member its scratch folder's path
+harness (Claude Code, pi) hands the member its scratch folder's path
 as `TEAMWIRE_SCRATCH`, and the seat rules say to keep temporary files there,
 or in the harness's own per-session scratch folder, never in the repository
 or a shared `/tmp` path. A member whose launch fails after its
@@ -61,8 +61,6 @@ running team. `--dry-run` validates and prints the plan, touching nothing.
 
 Refuses (exit 1, nothing created): a real launch from a member identity
 (`refused.identity`; `--dry-run` is allowed); a new team's launch with
-`lead_not_locatable` when the lead's harness cannot read watch lines and
-teamwire cannot find the lead's pane; a new team's launch with
 `lead_setup_missing` when the lead's harness says its lead setup is not
 loaded in this session (a pi session without teamwire's lead package, ADR
 0030); a background lead session; any spec error;
@@ -88,13 +86,8 @@ with no running tmux server, they open in the team's own detached session
 Spec fields, per team: `team`, `title`, `setup`, `harness` (default: the lead's harness), `host` (default: detected; `herdr` when `HERDR_ENV=1`, else `tmux` when `TMUX` is set; when both are set, teamwire walks its own parent processes, own pid first and at most 64 steps, and the nearest program named `tmux` or `herdr` decides, with herdr first when neither is found),
 `children`, `context_handoff_tokens`, `plugins`, `refs`. Per member: `role`, `title`, `kind`, `mode`, `repo`, `branch`,
 `base`, `cwd`, `model`, `effort`, `check`, `owns`, `task` or `task_file`,
-`deadline_s` (default 1800), `harness` (default: the lead's harness, so a member of a Codex lead runs on Codex), `setup`, `dispatch` (default true),
-`accept_trust` (default true), `context_handoff_tokens` (tokens, above zero; launch warns below 100,000, because a fresh Claude Code session already holds about 60,000), `plugins`. A Codex member's arguments hold no
-newline, because herdr refuses one: teamwire writes each `-c key=value` as
-one-line TOML (basic strings that escape `\n`, `\t`, `\r`, `\"`, `\\` and any
-other control character as `\uXXXX`, tables as inline tables), and Codex reads
-the same value.
-The contract still travels in `-c developer_instructions=...` (ADR 0023).
+`deadline_s` (default 1800), `harness` (default: the lead's harness, so a member of a pi lead runs on pi), `setup`, `dispatch` (default true),
+`accept_trust` (default true), `context_handoff_tokens` (tokens, above zero; launch warns below 100,000, because a fresh Claude Code session already holds about 60,000), `plugins`.
 `plugins` is an object from a
 Claude plugin id `name@marketplace` to true or false. The team's map applies
 to every member of the same spec file, and a member's value wins per key
@@ -195,11 +188,9 @@ watch lease looks dead); a larger interval, or 0, exits 3. `--once` runs one
 poll and exits (for tests and scripts).
 Refuses to start when another live watch holds the team's lease, and names
 its pid. `--deliver` also types each printed line, with the same dated
-prefix, into the lead's place, for a lead whose harness cannot read the
-watch's output as it is printed (a Codex lead, ADR 0023). Each delivery ends
+prefix, into the lead's place. Each delivery ends
 within 15 s. A line that cannot be delivered is still printed, and the watch
-keeps polling. A lead with that limit, one that cannot read watch lines, starts it as
-`nohup teamwire watch <team> --deliver >/dev/null 2>&1 &`. A pi lead calls the
+keeps polling. A pi lead calls the
 `teamwire_watch` tool of teamwire's lead package instead, which runs the watch
 and steers each line into the session (ADR 0036); the package refuses
 `teamwire watch` through bash. `teamwire pr-watch --deliver` types its lines
@@ -274,7 +265,7 @@ them. A member started by an older build resumes on Claude's default.
 For that member, while it is `working`, `--role R` also prints
 `tool: <name>, running <duration>` (such as `tool: Bash, running 15m02s`):
 the tool call its session started and has no result for yet, read from
-the Claude Code transcript, the Codex rollout or the pi extension's state
+the Claude Code transcript or the pi extension's state
 file. A member between two calls, or on a harness that cannot tell,
 prints `tool: none reported`. `--json` carries it as
 the member's `current_tool`, `{"name", "started_at": "<RFC 3339>",
@@ -344,8 +335,7 @@ started or reused as launch does; a hold that cannot be taken is a warning.
 Then come the line `watch: <how to start it>` and a line that says a
 member killed mid-turn needs a `reprompt` or a `note`. The `watch:` line, the
 same one launch prints, reads `watch: teamwire watch <team>` for a Claude
-Code lead, `watch: nohup teamwire watch <team> --deliver >/dev/null 2>&1 &`
-for a Codex lead, and `watch: call the teamwire_watch tool with team <team>`
+Code lead, and `watch: call the teamwire_watch tool with team <team>`
 for a pi lead. When the caller is not
 the team's lead session, a last line says that results go to the reopened lead
 and that `teamwire lead --adopt <team>` makes the caller the lead instead.
@@ -379,9 +369,7 @@ The steps run in this order, one line on stdout for each:
 2. Close the old place, as `close --role` does, including the wait for its
    processes to end. A member with no recorded place has nothing to close.
 3. Open a new tab with a new session id, in the member's folder, with the
-   per-run files and the model and effort the member was launched with. A
-   harness that picks its own session id (Codex) is recorded with no session
-   until its session-start hook records one.
+   per-run files and the model and effort the member was launched with.
 4. Answer the plain folder-trust dialog, as launch does. A failure closes the
    new tab.
 5. Record the handoff in one store write: the new session and place, the next
@@ -417,12 +405,10 @@ worktree or pane. `close --role` is unchanged.
 When the close does not finish, no session is opened and the old one is still
 recorded. After the old session has ended, `teamwire reopen <team> --role R`
 resumes it. After a failure past the close (the spawn, the trust step or the
-write), the command closes the new tab and writes the old session id back when
-the row holds another one, which a harness that records its own session (Codex)
-can cause. The error then says that `reopen` resumes the old session. When the
-row held no session before the handoff, the error says `reopen` has nothing to
-resume. When the old id cannot be written back, the error says the member may
-hold a new, empty session.
+write), the command closes the new tab. The row still holds the old session,
+because only the write of step 5 changes it, and the error says that `reopen`
+resumes the old session. When the row held no session before the handoff, the
+error says `reopen` has nothing to resume.
 
 `--dry-run` prints the checks, then `would close`, `would open` and `would
 answer the trust dialog, record the handoff and send` lines, then `dry run:
@@ -592,7 +578,7 @@ refused.<code>: <text>` on stderr, exits 1, and answers nothing:
 5. The team must be open: `refused.team`.
 6. The member must exist and be `started`: `refused.role`.
 7. The member's harness must have a permission hook: `refused.harness`
-   (`harness <id> cannot answer a dialog`), as for Codex and pi.
+   (`harness <id> cannot answer a dialog`), as for pi.
 8. In one transaction, the answer is recorded only while the dialog `ID` is
    pending, belongs to the member, and is of its current session and
    generation. Otherwise: `refused.no_dialog` (no such dialog for the
@@ -933,7 +919,8 @@ released its hold and nothing would release a new one.
 session in a pane beside the caller's (ADR 0051). The old lead runs it as the
 last action of a turn, because the command closes the pane it runs in. Where
 the caller's harness limits how long a command may run, the caller gives it at
-least 240 seconds, because the Codex wait of step 7 lasts up to 180 seconds.
+least 240 seconds, because opening the pane may wait up to `spawn_timeout_s`
+and the proof of step 5 up to 90 seconds more.
 The steps run in this order, one line on stdout for each:
 
 1. Find the caller. The command finds the caller's session through each open
@@ -954,7 +941,7 @@ The steps run in this order, one line on stdout for each:
    arguments cannot be read, because its process or its argument list cannot
    be read, the line `warning: the old lead's arguments could not be read, so
    the new lead starts with no flag carried from them` says so, and the
-   command goes on. A Codex or pi lead then starts without the approval flags
+   command goes on. A pi lead then starts without the approval flags
    of the old one.
 3. `--dry-run` stops here and changes nothing (below).
 4. Open the new pane with `Host::split_run` beside the old pane, in the old
@@ -962,14 +949,14 @@ The steps run in this order, one line on stdout for each:
    leads N more teams). The new lead's first prompt is a command-line
    argument. The new pane gets `TEAMWIRE_HOME` when the caller named a state
    directory. It also gets the config folder variable of the lead's own
-   harness (`CLAUDE_CONFIG_DIR`, `CODEX_HOME` or `PI_CODING_AGENT_DIR`) when
+   harness (`CLAUDE_CONFIG_DIR` or `PI_CODING_AGENT_DIR`) when
    the command's environment sets it, because the new pane's environment
    comes from the host's server, not from the old lead. Each flag of the old
    lead that the harness does not carry gives one `warning:` line, by name
    only. Each warning of the harness's lead start, such as a permission mode
    the new lead cannot be started with, gives one `warning:` line too, also
    on `--dry-run`.
-5. Prove, for a harness that chooses the session id (Claude Code, pi). The
+5. Prove. The
    command waits up to 90 seconds, or `spawn_timeout_s` when that is lower,
    for the locator to find the new session in the new pane. The 90 seconds
    end before the 120-second default limit of Claude Code's Bash tool. On a
@@ -978,19 +965,15 @@ The steps run in this order, one line on stdout for each:
    open and still led by the old session, then records the new lead and
    writes `team.lead_adopted`. The line reads
    `team <team>: lead is now session <new>`.
-7. For a harness that picks its own session id (Codex), steps 5 and 6 are
-   skipped. The new lead's first prompt tells it to run
-   `teamwire lead --adopt <team>` for each team, and the command waits up to
-   180 seconds until no led team names the old session.
-8. Move the sleep hold to the new lead, as `ensure_hold` does for launch. A
-   hold that cannot be taken is a `warning:` line. When step 6 or step 7
-   exits 2, the command first moves the hold of each team whose recorded
-   lead is no longer the old session, to that lead.
-9. Report the teams, the new pane, the document path, and that this session
+7. Move the sleep hold to the new lead, as `ensure_hold` does for launch. A
+   hold that cannot be taken is a `warning:` line. When step 6 exits 2, the
+   command first moves the hold of each team whose recorded lead is no longer
+   the old session, to that lead.
+8. Report the teams, the new pane, the document path, and that this session
    is no longer the lead.
-10. Locate the old session again and close its pane with `Host::close_pane`.
-    A close that fails is a `warning:` line that tells the old lead to end
-    its turn and the user to close the pane.
+9. Locate the old session again and close its pane with `Host::close_pane`.
+   A close that fails is a `warning:` line that tells the old lead to end
+   its turn and the user to close the pane.
 
 Exit codes:
 
@@ -998,7 +981,7 @@ Exit codes:
 | --- | --- |
 | 0 | Every led team has the new lead, and the old pane was closed or a warning said why not |
 | 1 | Refused, and nothing changed: a refusal of step 1 or step 2 |
-| 2 | Partial. The new pane could not be opened, or the new session was not seen in it, and every team still has the old lead. Or a team's write failed or the Codex wait ran out: the output names the teams that moved and the teams that did not, both panes stay open, and nothing is rolled back. The new lead runs `teamwire lead --adopt <team>` for each team that did not move, which also moves that team's sleep hold to the new lead |
+| 2 | Partial. The new pane could not be opened, or the new session was not seen in it, and every team still has the old lead. Or a team's write failed: the output names the teams that moved and the teams that did not, both panes stay open, and nothing is rolled back. The new lead runs `teamwire lead --adopt <team>` for each team that did not move, which also moves that team's sleep hold to the new lead |
 | 3 | A usage error |
 | 6 | An open team's store could not be read while finding the caller |
 
@@ -1006,7 +989,7 @@ Exit codes:
 harness's lead-start warnings of step 4. It then prints `teams:`,
 `old pane:`, `handoff document:`, the label and folder of the pane it would
 open, one `environment: NAME=value` line for each variable the new pane gets,
-`new session:` (the chosen id, or the one its harness picks), `command:` with
+`new session:` (the chosen id), `command:` with
 the new lead's command line, and one `not passed on:` line per dropped flag. It ends with `dry run: no pane was
 opened and no team changed`. It opens every store read-only.
 
@@ -1058,11 +1041,9 @@ find none, because GitHub has no check runs for a few seconds after a push.
 
 `--deliver TEAM` (ADR 0039) puts `[teamwire:<team>] ` before each line,
 prints it, and types it into that team's lead pane through the delivery of
-`watch --deliver`, for a lead that cannot read the output as it is printed:
+`watch --deliver`:
 `[teamwire:alpha] o/r#7 MERGED`. Each delivery ends within 15 s; a line that
-cannot be delivered is still printed, and the watch goes on. A Codex lead
-starts it as `nohup teamwire pr-watch --deliver <team> -R OWNER/REPO -i 45
-<prs> >/dev/null 2>&1 &`. A member session is refused (`refused.identity`,
+cannot be delivered is still printed, and the watch goes on. A member session is refused (`refused.identity`,
 exit 1), and a team with no database exits 1. Without `--deliver` the lines
 carry no prefix and nothing is typed. A pi lead calls the `teamwire_pr_watch`
 tool of teamwire's lead package instead, with `repo`, `prs` and an optional
@@ -1249,7 +1230,7 @@ member's identity channel (ADR 0008): for Claude Code, the `env` key of the
 per-member `settings.json`, which reaches the Bash tool and the hooks.
 `TEAMWIRE_TOKEN_FILE`, a path to a file that holds the token, stands in for
 `TEAMWIRE_TOKEN` when the harness cannot put the token in a session's
-environment (Codex, [ADR 0023](../adr/0023-codex-cli-is-a-harness.md)).
+environment, as for pi (ADR 0023 point 4, which ADR 0054 keeps).
 
 ### `teamwire done --status done|blocked|failed --summary TEXT`
 
@@ -1351,10 +1332,9 @@ and still exits 0.
 | --- | --- | --- |
 | `teamwire hook turn-end [--team T --role R]` | a member's Stop hook | Like `claude-stop`, on the harness the member row names. `claude-stop` is the older name of the same hook. |
 | `teamwire hook post-tool [--team T --role R]` | a member's PostToolUse hook | Like `claude-post-tool`, on the member's harness. A harness without an in-turn hook gets no reply. |
-| `teamwire hook session-start --team T --role R` | a member's SessionStart hook | Records the session id the harness chose for the member. Accepted only with the member's token (`TEAMWIRE_TOKEN` or `TEAMWIRE_TOKEN_FILE`) and for a member that is not removed; a later call replaces the session. Prints nothing on stdout and always exits 0. |
 | `teamwire hook permission --team T --role R` | a Claude Code member's PermissionRequest hook | Records the call as `dialog.opened`, waits up to 100 s for the lead's `dialog answer`, then prints Claude Code's allow or deny reply, or nothing. Accepted only with the member's token and for the member's current session. Never answers a call it marked unanswerable. Always exits 0. |
 | `teamwire hook lead-tool [--harness ID]` | the lead's tool hook (ADR 0035), after each of the lead's tool calls | Parses the call with the named harness (`claude-code` when absent). When the session leads an open team, prints the in-turn reply `{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":<note>}}` when the call is a member's work, or when anything was never typed into the lead's pane (the undelivered note below), or both, joined by a newline. A member's work is an edit to a file under a member's `repo` or `cwd` and outside `$TEAMWIRE_HOME`, a build or test run (`cargo`, `npm`, `pnpm`, `yarn`, `bun`, `go`, `pytest`, `make` and the like, and a `.sh` script whose name holds `test`, `gate`, `build` or `check`), `git commit`, `merge`, `rebase`, `cherry-pick`, `revert`, `am`, `apply`, `pull`, `push` or `worktree add`, and `gh pr create` or `merge`. The note is `[teamwire:<team>] You lead team <team>, so leave <this edit to PATH, this build or test run, this git merge, ...> to its members: reprompt the member that owns the work, or brief a new one. If the user asked you to do it yourself, carry on.` It names every team the session leads that the call concerns. The undelivered note is read at every call, not only for member work (ADR 0043 decisions 1 and 4): one line per delivery to the lead in state `undelivered`, `teamwire: <id> (<type> from <sender>) was never typed into your pane. Read <team dir>/comms/<id>.md, then run teamwire received <team> <id>.`, and one per member whose newest result is `undelivered`, `teamwire: <role>'s result #<n> was never typed into your pane. Read <result file>, then run teamwire received <team> <role>.`, until the lead marks it read. It never blocks the call. Returns nothing in a member session, for a subagent's call, for a harness with no tool parser, or on any error. Opens stores read-only, only after the call matched, and writes nothing, inside a bound of about 5 s. Always exits 0. |
-| `teamwire hook lead-stop [--harness ID]` | the lead's Stop hook | Like `claude-lead-stop`, parsing and holding with the named harness (`claude-code` when absent). For a lead whose harness cannot read watch lines, the note names the background `--deliver` watch instead of Monitor. For a pi lead, which starts the watch with the lead package's tool, the note is `[teamwire:<team>] no watch is running; start it with the teamwire_watch tool (team "<team>") before you stop.` The hold also carries the undelivered note of `lead-tool`, after the other notes. |
+| `teamwire hook lead-stop [--harness ID]` | the lead's Stop hook | Like `claude-lead-stop`, parsing and holding with the named harness (`claude-code` when absent). For a pi lead, which starts the watch with the lead package's tool, the note is `[teamwire:<team>] no watch is running; start it with the teamwire_watch tool (team "<team>") before you stop.` The hold also carries the undelivered note of `lead-tool`, after the other notes. |
 | `teamwire hook claude-stop` | a member's per-run Stop hook | Route A of ADR 0007: hold once for report gaps or unread messages, else write the result and deliver it. Reads the hook input on stdin. Always exits 0. |
 | `teamwire hook claude-post-tool` | a member's per-run PostToolUse hook | Returns a reminder of unread message ids as `additionalContext`, once per id. When the member's context fill has reached its handoff point, it adds one note per generation (key `handoff-note:<role>:<generation>`) that names `teamwire handoff --guide` and `reports/<role>.handoff.md`, after the reminder. A `handed_off` message whose whole body fit in the typed line is not unread. Always exits 0. |
 | `teamwire hook claude-lead-stop` | the lead's Stop hook, from the teamwire plugin (ADR 0018) | Holds the lead's stop once when the session leads an open team with a started member that has no completion for its current generation and no live watch lease, with one line per team naming `teamwire watch <team>`. When the session leads an open AFK team and nothing will wake the lead (no open team this session leads has a working member and a live watch lease), it holds once more with `[teamwire:<team>] AFK run: nobody will answer you. If you were about to ask the user, decide it yourself, add it to <team dir>/afk/decisions.md, and carry on. If the work is finished, add the reporter, then run `teamwire close <team>` once <team dir>/afk/REPORT.md exists. If a command you started will wake you, stop again.` (`<team dir>` is the absolute `$TEAMWIRE_HOME/teams/<team>`). For an AFK team that has never had a member, the part after `carry on.` reads `The team has no members yet: add the ones the task needs, or, if the run is over, run `teamwire close <team>`, which needs no report for a team that never had a member.`, because close accepts such a team without a report. Past the budget that note is `[teamwire:<team>] budget spent at <RFC 3339 ms Z>: start no new implementer. Finish what is running, add the reporter if it has not run, then run `teamwire close <team>` once <team dir>/afk/REPORT.md has every heading. If a command you started will wake you, stop again.` When the no-watch note also applies, both come back in one reply, joined by a newline. It also holds for the undelivered note of `lead-tool`, one line per item never typed into the lead's pane, after the other notes. Returns nothing in a member session (any non-empty `TEAMWIRE_TEAM`, `TEAMWIRE_ROLE` or token), for a subagent, on a continued stop, or on any error. Opens stores read-only and writes nothing; every store read, the lead harness's included, happens inside a bound of about 5 s. Always exits 0. |
@@ -1364,10 +1344,10 @@ and still exits 0.
 
 | Command | Does |
 | --- | --- |
-| `teamwire doctor [--base REF]` | Read-only checks: `quick_check` on each team database, schema versions (a team at an older schema passes, with a note that the next write migrates it), free disk (a failure below 200 MB, the same floor as launch), network filesystem, stale close locks (a lock is stale when its pid is gone or now belongs to a process that started at another time) and watch leases (stale when the pid is gone, or alive with a heartbeat over 600 s old), herdr's session hook present, `.worktrees/` ignored in the current repo, harness and host binaries on `PATH`, `claude --version` and `claude --help` (a warning when the help lacks any of `--session-id`, `--resume`, `--permission-mode`, `--append-system-prompt-file`, `--settings`, `--mcp-config`, `--model`, `--effort`), the host's version (`herdr --version` or `tmux -V`; a probe that fails or takes over 5 s is a warning), a warning naming, never showing, any of `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_USE_BEDROCK` or `CLAUDE_CODE_USE_VERTEX` that is set (each overrides the stored login for every member), a warning per open team with a member that another teamwire build started, a per-team check `team <team> counters` that fails when a message counter is below the largest id in use or its counter row is missing (`counter <name> is missing but <n> is in use`), and prints the SQL statement that repairs it (doctor never runs the repair), the teamwire plugin installed at user scope, enabled, and with the files Claude Code loads matching this binary (not compared when this binary is a build under `target/`), a failure for a leftover ADR 0012 skill or MCP entry (`old lead setup`), and a warning for a local- or project-scope `teamwire` entry in the current directory, which Claude Code starts as a second server beside the plugin's. A plugin whose files match what this binary renders for the home it was installed for, but whose home differs from this run's, is a warning and gives no `teamwire install` advice: `warn teamwire plugin: installed for state directory <A>; this run uses <B>` (`<A>` reads `~/.teamwire (the default)` for a plugin installed for the default directory). Any other difference stays a failure. Doctor also prints a host line, for herdr and tmux, with the reason for the pick: `ok   host: herdr (HERDR_ENV is 1)`, `host: tmux (TMUX is set)`, `host: tmux (both HERDR_ENV and TMUX are set; the nearest parent is tmux)` or `host: herdr (both HERDR_ENV and TMUX are set; no parent is tmux or herdr, so herdr first)`. With no host the old line stays. Exit 0 when all pass, 2 otherwise. When `codex` is on PATH, doctor also lists a `codex on PATH` line with its version, and checks the Codex plugin: a missing plugin is ok and names `teamwire install --harness codex`, a stale one is a warning. Without `codex` on PATH, doctor says nothing about Codex. When `pi` is on PATH, doctor also lists a `pi on PATH` line with its version, and checks the pi lead package (`pi lead package`): not listed in pi's `settings.json` is ok and names `teamwire install --harness pi`, files at `$TEAMWIRE_HOME/pi-package/` that are not this binary's (not compared for a build under `target/`) are a warning. `--base REF` (default `HEAD`) names the commit members start from; it changes only the spec-kit lines. Inside a git repository (the nearest folder at or above the current one that holds `.git`) whose root holds `.specify/` on disk, or whose `--base` commit holds it, doctor also prints nine spec-kit lines after `.worktrees ignored`. Each is `ok` or a warning, never a failure. Each names the ref and its short commit id as `in <ref> (<sha7>)`, and each warning names the file and one action, ending `then commit on <ref>` where a commit is needed. A worktree is cut from a commit, so the lines read files from that commit (`git rev-parse`, `git ls-tree`, `git show`), never from git's index or the disk, except where a line below says so. The lines: `spec-kit version` (the `version` in the committed `.specify/integration.json`; ok on the 1.3 line, naming the tested release 1.3.3.dev0, spec-kit commit c438494; a warning outside it, with the action to run `specify integration upgrade <key>` with spec-kit 1.3 installed), `spec-kit committed` (compares the disk with the commit, by design: each file of `.specify/` and each `speckit-` entry of `.claude/skills/`, `.agents/skills/` and `.pi/prompts/` that is on disk but not in the commit, named as changed, new, untracked, or git-ignored with the rule and its file; the feature pointer and what spec-kit's own `.specify/.gitignore` ignores are left out; the action removes each ignore rule and names the exact `git add`, with the edited ignore file; when `<ref>` is not the checked-out branch, it ends `run git switch <ref> and commit there, or commit here and merge this branch into <ref>`), `spec-kit constitution` (the committed constitution holds no template placeholder such as `[PROJECT_NAME]`; the line says when the copy on disk differs), `spec-kit integrations` (lists the committed `integration.json`'s `installed_integrations` and its older `default_integration` and `integration` keys, and warns for each one whose command folder has no `speckit-` entry in the commit: `claude` `.claude/skills/speckit-*`, `codex` `.agents/skills/speckit-*`, `pi` `.pi/prompts/speckit.*.md`; a folder on disk but not committed points at `spec-kit committed`; a broken file gets `delete it, run specify integration install <key> for each integration members use`), `spec-kit git extension` (a warning when the committed `.specify/extensions.yml` lists `git` under `installed:`, as an id or a mapping with an `id`, in any YAML form `PyYAML` reads that doctor's reader knows; action `specify extension remove git`), `spec-kit hooks` (a warning for each hook in the committed `extensions.yml` with `optional: false`, not `enabled: false` and no `condition`, of an extension other than `git`, since every spec-kit command file says the agent MUST run it; it names the extension, command and event, and the action is to read what it runs, then `specify extension remove <id>` or set `optional: true`), `spec-kit events` (a warning only for hooks spec-kit really wrote in the commit: a `.claude/settings.json` hook tagged `"__speckit_event__": true`, a `.codex/config.toml` hook with `speckit_marker = true`, `.specify/events.py`; and for `.codex/config.toml` or `.codex/hooks.json` in the commit or only on disk, which Codex launch refuses, with `remove it from the repository` (and no commit for a file only on disk); a manifest that declares `events:` while spec-kit wrote no hook is ok, with a note; the action names `specify extension remove <id>`, `specify extension disable <id>` or `specify integration upgrade <key> --force --integration-options="--events false"`), `spec-kit feature pointer` (asks `git check-ignore --no-index` on the working tree whether `.specify/feature.json` is ignored; a pointer tracked in the commit gets `git rm --cached .specify/feature.json`) and `spec-kit workflows` (always ok; lists the workflow ids in the committed `.specify/workflows/workflow-registry.json` and says teamwire starts none of them). A `--base` that git cannot resolve, or a git that refuses the repository, gives one `spec-kit base` warning that quotes git's first stderr line, and no other spec-kit line. Any other git error is quoted as git said it; "not in" the commit is said only when `ls-tree` does not list the path. An `extensions.yml` the reader cannot read (an anchor, a tag, an unclosed list) is a warning that says to check the file by hand, never ok. No spec-kit line is a `FAIL`, so none of them refuses `teamwire afk start`, which runs these checks with `HEAD`. AFK with spec-kit runs only from a `spec.md`, `plan.md` and `tasks.md` the user already reviewed. Doctor reads these files and asks git; it never runs `specify`. Outside such a repository it prints none of these lines. |
-| `teamwire install [--dry-run] [--force] [--harness ID[,ID]]` | Installs the teamwire plugin `teamwire@teamwire` (ADR 0018): writes a local marketplace to `$TEAMWIRE_HOME/claude-plugin/` holding the skills (`skills/teamwire/SKILL.md`, `skills/teamwire/reference.md` and `skills/afk/SKILL.md`, which Claude Code lists as `/teamwire:afk`), the lead's MCP server `<this binary> [--home DIR] mcp --lead` the lead's Stop hook `<this binary> [--home DIR] hook claude-lead-stop`, and the lead's tool hook `<this binary> [--home DIR] hook lead-tool --harness claude-code` on `PostToolUse` for every tool call (ADR 0035, ADR 0043), then registers it at user scope through `claude plugin marketplace add|update` and `claude plugin install|update|enable`. The plugin's version is a hash of its files, all three skill files included, so a new binary or skill is a new version. Then removes an ADR 0012 setup: the stamped skill under `<claude dir>/skills/teamwire/` and the user MCP entry `teamwire` (through `claude mcp remove`). Skips what is already current. Refuses, before any change, a skill edited by hand, an MCP entry named `teamwire` that is not the lead's server, a marketplace named `teamwire` from another source, a binary inside a `target/` directory, and a `claude` whose `plugin` command does not run; `--force` passes the first four. A foreign MCP entry is described with secret flag values (`--token X`, `--token=X`) hidden and URLs printed without user info or query. Exit 0 when done or when nothing needed a change, 1 when refused or when a change failed before anything was changed, 2 when a change failed after another was made (the message lists what was done; run it again). `--harness` names the harnesses to install for (`claude-code`, `codex`, `pi`). A name that is not on PATH is refused with exit 1, and an unknown name is a usage error, exit 3. Without it, a terminal gets a numbered selector of the harnesses found on PATH, all selected by default, and a script without a terminal gets `claude-code`. For Codex, install writes a marketplace to `$TEAMWIRE_HOME/codex-plugin/`, whose hooks run `hook lead-stop --harness codex` and `hook lead-tool --harness codex`, with the same `reference.md` (its `SKILL.md` also carries the Codex part), and changes Codex only through `codex plugin marketplace add\|remove` and `codex plugin add\|remove` (ADR 0023). When a change needs it, install prints that Codex will ask you to review the plugin's hook once after the change. For pi, install writes the lead package to `$TEAMWIRE_HOME/pi-package/` (the lead extension, which registers `mcp --lead`, runs `hook lead-stop --harness pi`, `hook lead-tool --harness pi` and the `teamwire_watch` tool; the skill with its pi part; `reference.md`) and lists it with `pi install <dir>`, run with `PI_OFFLINE=1`, only when pi's `settings.json` does not list it yet (ADR 0030). pi loads the folder in place, so changed files need no second `pi install`; install prints that open pi sessions see the change after a restart. |
-| `teamwire uninstall [--dry-run] [--force]` | Runs `claude plugin uninstall` and `claude plugin marketplace remove`, deletes `$TEAMWIRE_HOME/claude-plugin/` (the whole plugin directory, all three skill files), and removes an ADR 0012 skill and MCP entry with the same refusals as `install`; `--force` removes an edited skill, a foreign entry, or a marketplace named `teamwire` from another source anyway. A binary under `target/` may uninstall. Exit codes as for `install`. `claude plugin uninstall` leaves the plugin's cache folder on disk, which is Claude Code's behaviour: Claude Code keeps it at `<claude dir>/plugins/cache/teamwire/teamwire/<version>/`, one folder per installed version. `uninstall` does not delete it. When `codex` is on PATH, it also removes the Codex plugin and marketplace through `codex plugin`. When `pi` is on PATH, it also runs `pi remove <dir>` for a listed lead package and deletes `$TEAMWIRE_HOME/pi-package/`. |
+| `teamwire doctor [--base REF]` | Read-only checks: `quick_check` on each team database, schema versions (a team at an older schema passes, with a note that the next write migrates it), free disk (a failure below 200 MB, the same floor as launch), network filesystem, stale close locks (a lock is stale when its pid is gone or now belongs to a process that started at another time) and watch leases (stale when the pid is gone, or alive with a heartbeat over 600 s old), herdr's session hook present, `.worktrees/` ignored in the current repo, harness and host binaries on `PATH`, `claude --version` and `claude --help` (a warning when the help lacks any of `--session-id`, `--resume`, `--permission-mode`, `--append-system-prompt-file`, `--settings`, `--mcp-config`, `--model`, `--effort`), the host's version (`herdr --version` or `tmux -V`; a probe that fails or takes over 5 s is a warning), a warning naming, never showing, any of `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_USE_BEDROCK` or `CLAUDE_CODE_USE_VERTEX` that is set (each overrides the stored login for every member), a warning per open team with a member that another teamwire build started, a per-team check `team <team> counters` that fails when a message counter is below the largest id in use or its counter row is missing (`counter <name> is missing but <n> is in use`), and prints the SQL statement that repairs it (doctor never runs the repair), the teamwire plugin installed at user scope, enabled, and with the files Claude Code loads matching this binary (not compared when this binary is a build under `target/`), a failure for a leftover ADR 0012 skill or MCP entry (`old lead setup`), and a warning for a local- or project-scope `teamwire` entry in the current directory, which Claude Code starts as a second server beside the plugin's. A plugin whose files match what this binary renders for the home it was installed for, but whose home differs from this run's, is a warning and gives no `teamwire install` advice: `warn teamwire plugin: installed for state directory <A>; this run uses <B>` (`<A>` reads `~/.teamwire (the default)` for a plugin installed for the default directory). Any other difference stays a failure. Doctor also prints a host line, for herdr and tmux, with the reason for the pick: `ok   host: herdr (HERDR_ENV is 1)`, `host: tmux (TMUX is set)`, `host: tmux (both HERDR_ENV and TMUX are set; the nearest parent is tmux)` or `host: herdr (both HERDR_ENV and TMUX are set; no parent is tmux or herdr, so herdr first)`. With no host the old line stays. Exit 0 when all pass, 2 otherwise. When `pi` is on PATH, doctor also lists a `pi on PATH` line with its version, and checks the pi lead package (`pi lead package`): not listed in pi's `settings.json` is ok and names `teamwire install --harness pi`, files at `$TEAMWIRE_HOME/pi-package/` that are not this binary's (not compared for a build under `target/`) are a warning. `--base REF` (default `HEAD`) names the commit members start from; it changes only the spec-kit lines. Inside a git repository (the nearest folder at or above the current one that holds `.git`) whose root holds `.specify/` on disk, or whose `--base` commit holds it, doctor also prints nine spec-kit lines after `.worktrees ignored`. Each is `ok` or a warning, never a failure. Each names the ref and its short commit id as `in <ref> (<sha7>)`, and each warning names the file and one action, ending `then commit on <ref>` where a commit is needed. A worktree is cut from a commit, so the lines read files from that commit (`git rev-parse`, `git ls-tree`, `git show`), never from git's index or the disk, except where a line below says so. The lines: `spec-kit version` (the `version` in the committed `.specify/integration.json`; ok on the 1.3 line, naming the tested release 1.3.3.dev0, spec-kit commit c438494; a warning outside it, with the action to run `specify integration upgrade <key>` with spec-kit 1.3 installed), `spec-kit committed` (compares the disk with the commit, by design: each file of `.specify/` and each `speckit-` entry of `.claude/skills/` and `.pi/prompts/` that is on disk but not in the commit, named as changed, new, untracked, or git-ignored with the rule and its file; the feature pointer and what spec-kit's own `.specify/.gitignore` ignores are left out; the action removes each ignore rule and names the exact `git add`, with the edited ignore file; when `<ref>` is not the checked-out branch, it ends `run git switch <ref> and commit there, or commit here and merge this branch into <ref>`), `spec-kit constitution` (the committed constitution holds no template placeholder such as `[PROJECT_NAME]`; the line says when the copy on disk differs), `spec-kit integrations` (lists the committed `integration.json`'s `installed_integrations` and its older `default_integration` and `integration` keys, and warns for each one whose command folder has no `speckit-` entry in the commit: `claude` `.claude/skills/speckit-*`, `pi` `.pi/prompts/speckit.*.md`; a folder on disk but not committed points at `spec-kit committed`; a broken file gets `delete it, run specify integration install <key> for each integration members use`), `spec-kit git extension` (a warning when the committed `.specify/extensions.yml` lists `git` under `installed:`, as an id or a mapping with an `id`, in any YAML form `PyYAML` reads that doctor's reader knows; action `specify extension remove git`), `spec-kit hooks` (a warning for each hook in the committed `extensions.yml` with `optional: false`, not `enabled: false` and no `condition`, of an extension other than `git`, since every spec-kit command file says the agent MUST run it; it names the extension, command and event, and the action is to read what it runs, then `specify extension remove <id>` or set `optional: true`), `spec-kit events` (a warning only for hooks spec-kit really wrote in the commit: a `.claude/settings.json` hook tagged `"__speckit_event__": true`, `.specify/events.py`; a manifest that declares `events:` while spec-kit wrote no hook is ok, with a note; the action names `specify extension remove <id>`, `specify extension disable <id>` or `specify integration upgrade <key> --force --integration-options="--events false"`), `spec-kit feature pointer` (asks `git check-ignore --no-index` on the working tree whether `.specify/feature.json` is ignored; a pointer tracked in the commit gets `git rm --cached .specify/feature.json`) and `spec-kit workflows` (always ok; lists the workflow ids in the committed `.specify/workflows/workflow-registry.json` and says teamwire starts none of them). A `--base` that git cannot resolve, or a git that refuses the repository, gives one `spec-kit base` warning that quotes git's first stderr line, and no other spec-kit line. Any other git error is quoted as git said it; "not in" the commit is said only when `ls-tree` does not list the path. An `extensions.yml` the reader cannot read (an anchor, a tag, an unclosed list) is a warning that says to check the file by hand, never ok. No spec-kit line is a `FAIL`, so none of them refuses `teamwire afk start`, which runs these checks with `HEAD`. AFK with spec-kit runs only from a `spec.md`, `plan.md` and `tasks.md` the user already reviewed. Doctor reads these files and asks git; it never runs `specify`. Outside such a repository it prints none of these lines. |
+| `teamwire install [--dry-run] [--force] [--harness ID[,ID]]` | Installs the teamwire plugin `teamwire@teamwire` (ADR 0018): writes a local marketplace to `$TEAMWIRE_HOME/claude-plugin/` holding the skills (`skills/teamwire/SKILL.md`, `skills/teamwire/reference.md` and `skills/afk/SKILL.md`, which Claude Code lists as `/teamwire:afk`), the lead's MCP server `<this binary> [--home DIR] mcp --lead` the lead's Stop hook `<this binary> [--home DIR] hook claude-lead-stop`, and the lead's tool hook `<this binary> [--home DIR] hook lead-tool --harness claude-code` on `PostToolUse` for every tool call (ADR 0035, ADR 0043), then registers it at user scope through `claude plugin marketplace add|update` and `claude plugin install|update|enable`. The plugin's version is a hash of its files, all three skill files included, so a new binary or skill is a new version. Then removes an ADR 0012 setup: the stamped skill under `<claude dir>/skills/teamwire/` and the user MCP entry `teamwire` (through `claude mcp remove`). Skips what is already current. Refuses, before any change, a skill edited by hand, an MCP entry named `teamwire` that is not the lead's server, a marketplace named `teamwire` from another source, a binary inside a `target/` directory, and a `claude` whose `plugin` command does not run; `--force` passes the first four. A foreign MCP entry is described with secret flag values (`--token X`, `--token=X`) hidden and URLs printed without user info or query. Exit 0 when done or when nothing needed a change, 1 when refused or when a change failed before anything was changed, 2 when a change failed after another was made (the message lists what was done; run it again). `--harness` names the harnesses to install for (`claude-code`, `pi`). A name that is not on PATH is refused with exit 1, and an unknown name is a usage error, exit 3. Without it, a terminal gets a numbered selector of the harnesses found on PATH, all selected by default, and a script without a terminal gets `claude-code`. For pi, install writes the lead package to `$TEAMWIRE_HOME/pi-package/` (the lead extension, which registers `mcp --lead`, runs `hook lead-stop --harness pi`, `hook lead-tool --harness pi` and the `teamwire_watch` tool; the skill with its pi part; `reference.md`) and lists it with `pi install <dir>`, run with `PI_OFFLINE=1`, only when pi's `settings.json` does not list it yet (ADR 0030). pi loads the folder in place, so changed files need no second `pi install`; install prints that open pi sessions see the change after a restart. |
+| `teamwire uninstall [--dry-run] [--force]` | Runs `claude plugin uninstall` and `claude plugin marketplace remove`, deletes `$TEAMWIRE_HOME/claude-plugin/` (the whole plugin directory, all three skill files), and removes an ADR 0012 skill and MCP entry with the same refusals as `install`; `--force` removes an edited skill, a foreign entry, or a marketplace named `teamwire` from another source anyway. A binary under `target/` may uninstall. Exit codes as for `install`. `claude plugin uninstall` leaves the plugin's cache folder on disk, which is Claude Code's behaviour: Claude Code keeps it at `<claude dir>/plugins/cache/teamwire/teamwire/<version>/`, one folder per installed version. `uninstall` does not delete it. When `pi` is on PATH, it also runs `pi remove <dir>` for a listed lead package and deletes `$TEAMWIRE_HOME/pi-package/`. |
 | `teamwire export <team> [--out FILE]` | Every record as JSON lines with CloudEvents-style names (STO-14). From a member session the lead's session id is left out: `team.lead_session` and the `old_session` and `new_session` of every `team.lead_adopted` event are null. |
-| `teamwire metrics [<team>] [--since DURATION] [--json]` | Local metrics from the event rows (`docs/metrics.md`). With a team name, a team that is closed is read from its newest archive under `$TEAMWIRE_HOME/archive/`; a team never seen is refused. `teamwire.member.tokens` lines cover Claude Code, pi and Codex members alike; what each harness reports is in `docs/metrics.md`. When the named team's store cannot be read (for example a schema newer than this binary), it prints the error and exits 6; without a team, an unreadable team is a warning and the exit stays 0. |
+| `teamwire metrics [<team>] [--since DURATION] [--json]` | Local metrics from the event rows (`docs/metrics.md`). With a team name, a team that is closed is read from its newest archive under `$TEAMWIRE_HOME/archive/`; a team never seen is refused. `teamwire.member.tokens` lines cover Claude Code and pi members alike; what each harness reports is in `docs/metrics.md`. When the named team's store cannot be read (for example a schema newer than this binary), it prints the error and exits 6; without a team, an unreadable team is a warning and the exit stays 0. |
 | `teamwire metrics export [--once]` | Sends events after the export mark to the OTLP endpoint, then moves the mark. A batch stops before the first unsent event whose 60-second bucket has not ended, so each bucket is sent as one point (ADR 0005); events of the current minute go in a later export. Without `--once` it repeats every 60 s until stopped; with `--once` it makes one pass and exits. When export is off it exits 0 at once. It also exits 0 when one team's store cannot be opened; that is intended, so one damaged team cannot stop the repeating exporter. |
 | `teamwire version` | Binary version, as `<crate version>+<12 hex commit>` (or `+unknown` when the build found no git commit), and the schema version it writes. |

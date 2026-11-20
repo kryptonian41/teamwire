@@ -11,7 +11,7 @@
 
 ![Rust 1.94](https://img.shields.io/badge/rust-1.94-0e6a64)
 ![Platform: macOS | Linux](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-0e6a64)
-![Harnesses: Claude Code | Codex](https://img.shields.io/badge/harnesses-Claude%20Code%20%7C%20Codex-0e6a64)
+![Harnesses: Claude Code | pi](https://img.shields.io/badge/harnesses-Claude%20Code%20%7C%20pi-0e6a64)
 ![Hosts: herdr | tmux](https://img.shields.io/badge/hosts-herdr%20%7C%20tmux-0e6a64)
 ![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-0e6a64)
 
@@ -116,7 +116,7 @@ database, so a person can read them.
 
 | Part | Supported |
 | --- | --- |
-| Agent harness | Claude Code, Codex CLI and pi, each for members and for the lead. A Codex or pi lead cannot run AFK mode. |
+| Agent harness | Claude Code and pi, each for members and for the lead. A pi lead cannot run AFK mode. |
 | Terminal host | [herdr](https://herdr.dev) and tmux. In tmux, teamwire finds the lead through the process tree and asks Claude Code whether a member is working. |
 | Operating system | macOS. Linux works without the sleep hold that keeps the machine awake during a run. |
 
@@ -125,7 +125,7 @@ database, so a person can read them.
 - Rust 1.94.1. The `rust-toolchain.toml` file pins it, so `rustup` installs it
   for you.
 - git
-- Claude Code, with `claude` on `PATH`. Codex CLI is optional: install it to use `codex` as a harness. pi is optional too; under herdr it needs `herdr integration install pi`.
+- Claude Code, with `claude` on `PATH`. pi is optional; under herdr it needs `herdr integration install pi`.
 - herdr or tmux. The lead session must run in a herdr pane or a tmux window
   of its own. With herdr, its session hook must be in your Claude Code
   settings.
@@ -159,8 +159,7 @@ plugin holds the lead's skill (`/teamwire:teamwire`), the lead's MCP server
 and the lead's Stop and tool hooks. Start a new Claude Code session afterwards, because
 an open session does not load a new plugin. Run `teamwire install` again
 after every `cargo install`. `teamwire uninstall` removes the plugin.
-`teamwire install --harness codex` installs the Codex plugin from
-`$TEAMWIRE_HOME/codex-plugin/`. `teamwire install --harness pi` writes a pi
+`teamwire install --harness pi` writes a pi
 package to `$TEAMWIRE_HOME/pi-package/` and adds it with `pi install`. In a
 pi lead, the watch runs through the package's `teamwire_watch` tool, and each
 watch line reaches the lead as a message.
@@ -270,7 +269,7 @@ than one chat, so a team pays off only when its parts are truly independent.
 | `teamwire metrics` / `export` | Local metrics from the event rows, or every record of a team as JSON lines. |
 | `teamwire afk start` | Create the team of an AFK run and take the sleep hold. The `/teamwire:afk` skill runs it. |
 | `teamwire doctor` | Run read-only checks of the state, the disk and the tools teamwire needs. |
-| `teamwire install` / `uninstall` | Install or remove the teamwire plugin for Claude Code, and for Codex with `--harness codex`. |
+| `teamwire install` / `uninstall` | Install or remove the teamwire plugin for Claude Code, and the pi lead package with `--harness pi`. |
 | `teamwire done`, `inbox`, `ack` | Members only: record a result, read messages, mark messages read. |
 
 [docs/api/cli.md](docs/api/cli.md) lists every flag, output and exit code.
@@ -320,12 +319,12 @@ own. [ui/AGENTS.md](ui/AGENTS.md) has the dashboard's rules and commands.
 | --- | --- | --- |
 | `TEAMWIRE_HOME` | `~/.teamwire` | Where every team's state lives. `--home <DIR>` overrides it on any command. |
 | `host` in the spec | detected | The terminal host. teamwire picks herdr when `HERDR_ENV=1`, and tmux when `TMUX` is set. |
-| `harness` in the spec | the lead's harness | The agent program each member runs (`claude-code`, `codex`, or `pi` for a member). A member can name its own `harness`. |
+| `harness` in the spec | the lead's harness | The agent program each member runs (`claude-code` or `pi`). A member can name its own `harness`. |
 | `plugins` in the spec | the user's own switches | Turns Claude Code plugins on or off for members. |
 
 teamwire writes nothing under `~/.claude/` itself. Only `teamwire install`
 and `teamwire uninstall` change a harness's setup, and they do it through
-`claude plugin` and `codex plugin`. `teamwire install` also deletes the
+`claude plugin`, `pi install` and `pi remove`. `teamwire install` also deletes the
 skill file that a build before v0.3.0 put in `~/.claude/skills/teamwire/`, and
 the `teamwire` MCP entry it put in `~/.claude.json` (through `claude mcp
 remove`). It refuses to delete a skill file you edited, unless you pass

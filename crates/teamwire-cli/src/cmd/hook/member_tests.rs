@@ -38,12 +38,9 @@ pub(super) fn real_wiring() -> Wiring {
         user_home: None,
         claude_dir: None,
         claude_config_dir: None,
-        codex_test_home: None,
-        codex_home: None,
         pi_agent_dir: None,
         lead_harness: None,
         claude_session: None,
-        codex_thread: None,
         pi_marker: None,
     })
     .unwrap()
@@ -119,13 +116,12 @@ fn bed(session: Option<&str>) -> Bed {
     }
 }
 
-fn run(bed: &Bed, kind: MemberHook, token: Option<&str>, input: &str) -> Option<Vec<u8>> {
+fn run(bed: &Bed, kind: MemberHook, input: &str) -> Option<Vec<u8>> {
     member_hook_in(
         bed.home.path(),
         &bed.team,
         &bed.role,
         kind,
-        token,
         &bed.wiring,
         &mut input.as_bytes(),
     )
@@ -133,15 +129,6 @@ fn run(bed: &Bed, kind: MemberHook, token: Option<&str>, input: &str) -> Option<
 
 fn input(session: &str) -> String {
     json!({ "session_id": session, "stop_hook_active": false }).to_string()
-}
-
-fn recorded(bed: &Bed) -> Option<SessionId> {
-    let store = Store::open_existing(bed.home.path(), &bed.team).unwrap();
-    store
-        .read(|tx| tx.member(&bed.role))
-        .unwrap()
-        .unwrap()
-        .session_id
 }
 
 /// A completion with no report file holds the member's first stop.
@@ -164,7 +151,7 @@ fn complete(bed: &Bed) {
 fn a_turn_end_asks_the_harness_the_member_row_names() {
     let bed = bed(Some("s-1"));
     complete(&bed);
-    let reply = run(&bed, MemberHook::TurnEnd, None, &input("s-1")).unwrap();
+    let reply = run(&bed, MemberHook::TurnEnd, &input("s-1")).unwrap();
     assert_eq!(
         serde_json::from_slice::<serde_json::Value>(&reply)
             .unwrap()
@@ -182,32 +169,8 @@ fn a_harness_without_an_in_turn_hook_gets_no_post_tool_reply() {
     let mut caps = bed.b.capabilities();
     caps.in_turn_hook = false;
     bed.b.set_caps(caps);
-    assert_eq!(run(&bed, MemberHook::PostTool, None, &input("s-1")), None);
+    assert_eq!(run(&bed, MemberHook::PostTool, &input("s-1")), None);
     assert_eq!(bed.b.log().count_named("parse_turn_end"), 0);
-}
-
-#[test]
-fn the_right_token_records_the_session() {
-    let bed = bed(None);
-    assert_eq!(
-        run(&bed, MemberHook::SessionStart, Some(TOKEN), &input("s-1")),
-        None
-    );
-    assert_eq!(recorded(&bed), Some(SessionId::parse("s-1").unwrap()));
-    assert_eq!(bed.a.log().count_named("parse_turn_end"), 0);
-}
-
-#[test]
-fn a_wrong_or_missing_token_records_nothing() {
-    let bed = bed(None);
-    run(
-        &bed,
-        MemberHook::SessionStart,
-        Some("not-the-token"),
-        &input("s-1"),
-    );
-    run(&bed, MemberHook::SessionStart, None, &input("s-1"));
-    assert_eq!(recorded(&bed), None);
 }
 
 #[test]
@@ -221,16 +184,9 @@ fn a_removed_member_is_ignored() {
                 .map(|_| ())
         })
         .unwrap();
-    run(&bed, MemberHook::SessionStart, Some(TOKEN), &input("s-1"));
-    assert_eq!(recorded(&bed), None);
-}
-
-#[test]
-fn a_second_call_replaces_the_first_session() {
-    let bed = bed(None);
-    run(&bed, MemberHook::SessionStart, Some(TOKEN), &input("s-1"));
-    run(&bed, MemberHook::SessionStart, Some(TOKEN), &input("s-2"));
-    assert_eq!(recorded(&bed), Some(SessionId::parse("s-2").unwrap()));
+    assert_eq!(run(&bed, MemberHook::TurnEnd, &input("s-1")), None);
+    assert_eq!(bed.a.log().count_named("parse_turn_end"), 0);
+    assert_eq!(bed.b.log().count_named("parse_turn_end"), 0);
 }
 
 fn lead_stop(bed: &Bed, harness: Option<&str>) -> Option<Vec<u8>> {
@@ -255,23 +211,6 @@ fn the_lead_stop_hook_parses_and_holds_with_the_named_harness() {
     assert_eq!(bed.b.log().count_named("hold_reply"), 1);
     assert_eq!(bed.a.log().count_named("hold_reply"), 0);
     assert_eq!(bed.a.log().count_named("parse_turn_end"), 0);
-}
-
-#[test]
-fn the_lead_stop_hook_names_the_background_watch_for_a_lead_without_watch_lines() {
-    let bed = bed(None);
-    // The team's recorded lead harness is `fake-a`.
-    let mut caps = bed.a.capabilities();
-    caps.reads_watch_lines = false;
-    caps.watch_start = WatchStart::BackgroundCommand;
-    bed.a.set_caps(caps);
-    let reply = lead_stop(&bed, Some("fake-a")).unwrap();
-    let doc: serde_json::Value = serde_json::from_slice(&reply).unwrap();
-    let note = doc.get("reason").and_then(|n| n.as_str()).unwrap();
-    assert!(
-        note.contains("nohup teamwire watch alpha --deliver"),
-        "{note}"
-    );
 }
 
 #[test]
@@ -319,7 +258,11 @@ fn a_lead_harness_that_cannot_be_found_gets_the_monitor_wording() {
 /// harness `id` of this binary: the Stop hold, the end of a result line, the
 /// line after a reprompt, and launch's `watch:` value.
 fn watch_texts_of(id: &str) -> [String; 4] {
-    let start = lead_watch_start(Some(&HarnessId::parse(id).unwrap()), &real_wiring());
+    watch_texts_in(id, &real_wiring())
+}
+
+fn watch_texts_in(id: &str, wiring: &Wiring) -> [String; 4] {
+    let start = lead_watch_start(Some(&HarnessId::parse(id).unwrap()), wiring);
     let team = TeamName::parse("alpha").unwrap();
     [
         teamwire_report::watch_missing_note(&team, start),
@@ -338,19 +281,6 @@ fn a_claude_code_lead_is_told_to_run_the_watch_under_monitor() {
             "(no watch is running: teamwire watch alpha)",
             "no watch is running: start one with `teamwire watch alpha`",
             "teamwire watch alpha",
-        ]
-    );
-}
-
-#[test]
-fn a_codex_lead_is_told_to_run_the_watch_in_the_background() {
-    assert_eq!(
-        watch_texts_of("codex"),
-        [
-            "[teamwire:alpha] no watch is running; start it in the background with `nohup teamwire watch alpha --deliver >/dev/null 2>&1 &` before you stop.",
-            "(no watch is running: nohup teamwire watch alpha --deliver >/dev/null 2>&1 &)",
-            "no watch is running: start one with `nohup teamwire watch alpha --deliver >/dev/null 2>&1 &`",
-            "nohup teamwire watch alpha --deliver >/dev/null 2>&1 &",
         ]
     );
 }
@@ -401,7 +331,6 @@ fn the_lead_tool_hook_notes_a_build_through_every_harness_that_can_lead() {
     for (harness, input) in [
         (None, &shared),
         (Some("claude-code"), &shared),
-        (Some("codex"), &shared),
         (Some("pi"), &pi),
     ] {
         let note = lead_tool(&bed, &real, harness, input).unwrap();

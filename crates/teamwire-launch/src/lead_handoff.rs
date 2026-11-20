@@ -18,7 +18,7 @@ use teamwire_store::{Ctx, Store};
 use crate::handoff::HandoffError;
 use crate::handoff_order::Said;
 use crate::hold::ensure_hold;
-use crate::lead_adopt::{adopt_all, moved_teams, wait_for_adoption};
+use crate::lead_adopt::{adopt_all, moved_teams};
 use crate::lead_plan::{LeadCaller, LeadHandoffCtx, Planned, find_lead, plan};
 
 const HOST_TIMEOUT: Duration = Duration::from_secs(30);
@@ -36,21 +36,16 @@ pub struct LeadHandoffWaits {
     pub pause: Duration,
     /// The longest wait for the new session to show in the new pane.
     pub prove: Duration,
-    /// The longest wait for a new lead that picks its own session id to
-    /// adopt every team.
-    pub adopt: Duration,
 }
 
 impl LeadHandoffWaits {
     /// Proving waits as long as launch waits for one agent
-    /// (`Config::spawn_timeout_s`), but never past `MAX_PROVE_WAIT`;
-    /// adopting waits 180 seconds.
+    /// (`Config::spawn_timeout_s`), but never past `MAX_PROVE_WAIT`.
     #[must_use]
     pub fn of(config: &Config) -> Self {
         Self {
             pause: Duration::from_millis(500),
             prove: Duration::from_secs(config.spawn_timeout_s).min(MAX_PROVE_WAIT),
-            adopt: Duration::from_secs(180),
         }
     }
 }
@@ -112,20 +107,13 @@ pub fn lead_hand_off(
         planned.old_place.id,
         planned.split.argv.first().map_or("", String::as_str)
     )));
-    let adopted = if let Some(new) = &planned.new_session {
-        prove(ctx, &planned, new, &new_place, opts.waits)?;
-        say(Said::Line(format!(
-            "session {new} runs in pane {}",
-            new_place.id
-        )));
-        adopt_all(ctx, &planned, new, &new_place)
-    } else {
-        say(Said::Line(format!(
-            "waiting up to {} s for the new lead to adopt each team",
-            opts.waits.adopt.as_secs()
-        )));
-        wait_for_adoption(ctx, &planned, &new_place, opts.waits)
-    };
+    let new = &planned.new_session;
+    prove(ctx, &planned, new, &new_place, opts.waits)?;
+    say(Said::Line(format!(
+        "session {new} runs in pane {}",
+        new_place.id
+    )));
+    let adopted = adopt_all(ctx, &planned, new, &new_place);
     let moved = match adopted {
         Ok(moved) => moved,
         Err(e) => {
@@ -192,13 +180,7 @@ fn dry_run(planned: &Planned<'_>, say: &mut dyn FnMut(Said)) {
     for (name, value) in &planned.split.env {
         say(Said::Line(format!("environment: {name}={value}")));
     }
-    say(Said::Line(format!(
-        "new session: {}",
-        planned.new_session.as_ref().map_or_else(
-            || "the one its harness picks".to_owned(),
-            ToString::to_string
-        )
-    )));
+    say(Said::Line(format!("new session: {}", planned.new_session)));
     say(Said::Line(format!(
         "command: {}",
         teamwire_core::LaunchSpec::shell_line(&planned.split.argv)
@@ -277,7 +259,7 @@ fn closed_text(place: &Place, closed: Result<(), HostError>) -> String {
     }
 }
 
-/// Step 8: the sleep hold waits on the new lead's process.
+/// Step 7: the sleep hold waits on the new lead's process.
 fn hold(
     ctx: &LeadHandoffCtx<'_>,
     planned: &Planned<'_>,
@@ -313,7 +295,7 @@ fn hold(
     warnings.extend(said.into_iter().map(|w| format!("team {team}: {w}")));
 }
 
-/// Step 10: the old session is located again, then its pane is closed.
+/// Step 9: the old session is located again, then its pane is closed.
 fn close_old(ctx: &LeadHandoffCtx<'_>, planned: &Planned<'_>, say: &mut dyn FnMut(Said)) {
     let old = &planned.seat.session;
     let located = locate_session(ctx.platform, ctx.clock, old, planned.harness, planned.host)

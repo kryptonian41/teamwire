@@ -166,7 +166,11 @@ fn every_call_is_bounded_by_the_time_left() {
     );
     assert_eq!(outcome, DeliveryOutcome::HandedOff);
     let given = slow.given();
-    assert_eq!(given.len(), 4, "occupant, occupant, state, submit");
+    assert_eq!(
+        given.len(),
+        5,
+        "occupant, occupant, state, read_tail, submit"
+    );
     assert!(
         given.iter().all(|t| *t == Duration::from_secs(3)),
         "{given:?}"
@@ -204,8 +208,8 @@ fn a_spent_budget_after_the_second_enter_skips_the_event() {
     let mut caps = FakeHost::caps();
     caps.submit_ack = teamwire_core::SubmitAck::None;
     rig.host.set_caps(caps);
-    // Six host calls of 5 s each: the key press ends at 30 s, past 28 s.
-    let deadline = rig.clock.monotonic() + Duration::from_secs(28);
+    // Seven host calls of 5 s each: the key press ends at 35 s, past 33 s.
+    let deadline = rig.clock.monotonic() + Duration::from_secs(33);
     let outcome = deliver_line_within(
         &mut rig.ctx(),
         &Party::Lead,

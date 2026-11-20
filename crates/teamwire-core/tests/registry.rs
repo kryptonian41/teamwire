@@ -23,13 +23,10 @@ impl Harness for NamedHarness {
             turn_end_hook: false,
             in_turn_hook: false,
             mcp_client: false,
-            choose_session_id: false,
             can_push: false,
             session_env_via_config: false,
-            reads_watch_lines: true,
             watch_start: teamwire_core::harness::WatchStart::MonitoredCommand,
             load_skill: "",
-            reads_input_box: false,
             runs_afk: false,
         }
     }
@@ -93,9 +90,9 @@ fn unknown_and_duplicate_ids_refused() {
         RegistryError::Duplicate("none".to_owned())
     );
 
-    let codex = HarnessId::parse("codex").unwrap();
-    let err = registry.harness(&codex).err().unwrap();
-    assert_eq!(err, RegistryError::UnknownHarness(codex));
+    let unknown = HarnessId::parse("nonesuch").unwrap();
+    let err = registry.harness(&unknown).err().unwrap();
+    assert_eq!(err, RegistryError::UnknownHarness(unknown));
     assert_eq!(
         DeliveryError::from(err).code,
         DeliveryErrorCode::UnknownAdapter

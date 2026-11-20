@@ -272,8 +272,8 @@ pub(crate) fn write_file(
 }
 
 /// Writes the member directory and the contract. A harness may read the
-/// contract while it builds the launch (Codex puts its text in argv), so this
-/// runs before `launch_spec`.
+/// contract while it builds the launch, for example to put its text in argv,
+/// so this runs before `launch_spec`.
 pub(crate) fn write_contract(
     ctx: &Ctx<'_>,
     dirs: &Dirs,

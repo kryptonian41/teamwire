@@ -30,6 +30,5 @@ fn claude_code_passes_the_lead_setup_contract() {
             home: Some(home.path().to_path_buf()),
         },
         shared_skill: SKILL_TEXT,
-        before_read: &|_| {},
     });
 }

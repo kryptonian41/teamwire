@@ -17,9 +17,8 @@ pub struct LeadStart {
     /// The old lead process's arguments, `argv[0]` first, or empty when they
     /// cannot be read.
     pub old_args: Vec<String>,
-    /// The new session's id, when the harness lets teamwire choose it
-    /// (`HarnessCaps::choose_session_id`).
-    pub new_session: Option<SessionId>,
+    /// The new session's id, which teamwire chooses.
+    pub new_session: SessionId,
     /// The first prompt of the new session.
     pub prompt: String,
 }
@@ -46,10 +45,6 @@ pub struct CarryRules<'a> {
     pub switches: &'a [&'a str],
     /// Flags that take one value, as the next word or after `=`.
     pub with_value: &'a [&'a str],
-    /// A flag and the start its value must have to be carried, such as
-    /// Codex's `-c` with `model_reasoning_effort=`. The flag with any other
-    /// value is dropped.
-    pub keyed: &'a [(&'a str, &'a str)],
     /// Flags the new start sets itself, such as the session to resume, and
     /// whether each takes a value. They are neither carried nor dropped.
     pub replaced: &'a [(&'a str, bool)],
@@ -74,7 +69,6 @@ pub fn carry(old_args: &[String], rules: &CarryRules<'_>) -> (Vec<String>, Vec<S
         };
         let takes = |flag: &&str| *flag == name;
         let has_value = rules.with_value.iter().any(takes)
-            || rules.keyed.iter().any(|(flag, _)| *flag == name)
             || rules.replaced.iter().any(|(flag, v)| *flag == name && *v);
         let next = if has_value && inline.is_none() {
             words.next_if(|w| !w.starts_with('-')).cloned()
@@ -89,8 +83,6 @@ pub fn carry(old_args: &[String], rules: &CarryRules<'_>) -> (Vec<String>, Vec<S
             inline.is_none()
         } else if rules.with_value.iter().any(takes) {
             value.is_some()
-        } else if let Some((_, start)) = rules.keyed.iter().find(|(flag, _)| *flag == name) {
-            value.as_deref().is_some_and(|v| v.starts_with(start))
         } else {
             false
         };

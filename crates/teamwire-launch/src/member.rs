@@ -7,7 +7,6 @@
 //! writes `member.refused`.
 
 use std::collections::BTreeMap;
-use std::time::Duration;
 
 use serde_json::{Value, json};
 use teamwire_core::{
@@ -26,7 +25,6 @@ use crate::{
     LaunchOutcome, LaunchReport, MemberOutcome, PlannedMember, ValidPlan, hold, watch_command,
 };
 
-const HOST_TIMEOUT: Duration = Duration::from_secs(30);
 /// The longest reason kept in an event.
 const REASON_MAX: usize = 300;
 /// The refusals that write `member.refused` instead of `member.failed`, by
@@ -410,7 +408,6 @@ fn run_member(
             .spec
             .context_handoff_tokens
             .or(plan.spec.context_handoff_tokens),
-        accept_trust: m.spec.accept_trust,
     };
     make_scratch(&launch, made)?;
     write_contract(ctx, dirs, m, &launch)?;
@@ -464,7 +461,6 @@ fn run_member(
     }
     let place = spawn(host, &request)?;
     made.place = Some(place.clone());
-    let chosen = harness.capabilities().choose_session_id;
     write_if_open(
         ctx,
         plan,
@@ -472,9 +468,7 @@ fn run_member(
         "the place could not be recorded",
         |tx| {
             tx.set_member_place(role, &place)?;
-            if chosen {
-                tx.set_member_session(role, &session)?;
-            }
+            tx.set_member_session(role, &session)?;
             Ok(())
         },
     )?;
@@ -502,29 +496,11 @@ fn run_member(
     steps.mark(ctx, "trust");
 
     // 7. Started.
-    let session_known = if chosen {
-        Some(session)
-    } else {
-        host.occupant(&place, HOST_TIMEOUT)
-            .ok()
-            .and_then(|o| o.session)
-    };
-    if let (false, Some(s)) = (chosen, &session_known) {
-        let s = s.clone();
-        // The session-start hook may have recorded the session already; it
-        // knows the real one, so a value on the row stays.
-        let kept = ctx.store.write(|tx| match tx.reader().member(role)? {
-            Some(row) if row.session_id.is_some() => Ok(()),
-            _ => tx.set_member_session(role, &s),
-        });
-        if let Err(e) = kept {
-            tracing::warn!(%role, error = %e, "could not record the session id");
-        }
-    }
     steps.mark(ctx, "trust_done");
     let mut data = extra.clone();
     put(&mut data, "steps", steps.json());
-    // `reopen` resumes with these; a resume without them runs on the default.
+    // `reopen` resumes with the model and the effort; a resume without them
+    // runs on the default.
     put(&mut data, "model", json!(m.spec.model));
     put(&mut data, "effort", json!(m.spec.effort));
     put(&mut data, "plugins", json!(launch.plugins));
@@ -541,11 +517,7 @@ fn run_member(
         .map(|e| json!({ "file": e.file.display().to_string(), "lines": e.lines }))
         .collect();
     put(&mut data, "excluded", json!(excluded));
-    put(
-        &mut data,
-        "session_id",
-        json!(session_known.as_ref().map(SessionId::as_str)),
-    );
+    put(&mut data, "session_id", json!(session.as_str()));
     let at = ctx.clock.now();
     write_if_open(
         ctx,

@@ -59,9 +59,8 @@ pub(super) fn version_check(base: &Base<'_>) -> Check {
 /// Where each integration teamwire can run keeps its spec-kit commands: a
 /// folder, and the start and end of an entry's name in it. Another
 /// integration is listed without a folder check.
-const COMMAND_FOLDERS: [(&str, &str, &str, &str); 3] = [
+const COMMAND_FOLDERS: [(&str, &str, &str, &str); 2] = [
     ("claude", ".claude/skills", "speckit-", ""),
-    ("codex", ".agents/skills", "speckit-", ""),
     ("pi", ".pi/prompts", "speckit.", ".md"),
 ];
 

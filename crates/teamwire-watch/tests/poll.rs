@@ -1472,8 +1472,8 @@ fn a_report_from_before_the_message_leaves_it_unread() {
     assert_eq!(count(&lines, "UNREAD"), 1, "{lines:?}");
 }
 
-/// A member whose harness has not yet reported its session (Codex, ADR 0023)
-/// is of unknown liveness, never dead.
+/// A started member with no session id, which an older build recorded for a
+/// harness that picked its own, is of unknown liveness, never dead.
 #[test]
 fn a_started_member_with_no_session_is_never_called_dead() {
     let mut bed = Bed::new();

@@ -195,7 +195,6 @@ fn text_typed_after_the_placeholder_still_waits() {
 #[test]
 fn the_box_check_for_guarded_hosts_sees_typed_text_only() {
     let c = claude();
-    assert!(c.capabilities().reads_input_box);
     let typed = real_box("❯ fix the lin", "? for shortcuts");
     assert!(c.box_holds_text(&typed));
     // A working session draws its box too; text typed there also waits.

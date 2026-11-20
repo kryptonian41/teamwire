@@ -5,7 +5,7 @@
 //! pi finds a session id in the current folder, so the new pane starts in
 //! the old lead's folder.
 
-use teamwire_core::{CarryRules, HarnessError, HarnessErrorCode, LeadStart, LeadStartSpec, carry};
+use teamwire_core::{CarryRules, LeadStart, LeadStartSpec, carry};
 
 /// The flags a new lead keeps, from `pi --help` (pi 1.4, 2026-11-17): the
 /// trust switches, the provider, model and thinking level, the models to
@@ -29,7 +29,6 @@ const RULES: CarryRules<'static> = CarryRules {
         "--session-dir",
         "--tui-mode",
     ],
-    keyed: &[],
     replaced: &[
         ("--session-id", true),
         ("--session", true),
@@ -41,13 +40,8 @@ const RULES: CarryRules<'static> = CarryRules {
     ],
 };
 
-pub(crate) fn lead_start(pi_bin: &str, req: &LeadStart) -> Result<LeadStartSpec, HarnessError> {
-    let new = req.new_session.as_ref().ok_or_else(|| {
-        HarnessError::new(
-            HarnessErrorCode::BadInput,
-            "a pi lead start needs the new session's id",
-        )
-    })?;
+pub(crate) fn lead_start(pi_bin: &str, req: &LeadStart) -> LeadStartSpec {
+    let new = &req.new_session;
     let (carried, dropped) = carry(&req.old_args, &RULES);
     let mut argv = vec![
         pi_bin.to_owned(),
@@ -58,9 +52,9 @@ pub(crate) fn lead_start(pi_bin: &str, req: &LeadStart) -> Result<LeadStartSpec,
     // pi reads a message that starts with `@` as a file to attach, and `--`
     // ends its options, so the prompt is always a message.
     argv.extend(["--".to_owned(), req.prompt.clone()]);
-    Ok(LeadStartSpec {
+    LeadStartSpec {
         argv,
         dropped,
         warnings: Vec::new(),
-    })
+    }
 }

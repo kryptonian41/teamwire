@@ -21,10 +21,6 @@ use teamwire_fakes::{FakeBinDir, FakeBins, TestHome};
 struct Bed {
     home: TestHome,
     claude: TestHome,
-    /// `CODEX_HOME` of the fake `codex`, which keeps its state there.
-    codex: TestHome,
-    /// A directory holding the fake `codex`, put on `PATH` only by `codex_env`.
-    codex_bin: TestHome,
     user: TestHome,
     bins: FakeBinDir,
     _bin_dir: TestHome,
@@ -48,41 +44,6 @@ fn link_binary(real: &Path, dir: &Path) -> PathBuf {
             .unwrap();
     }
     std::fs::canonicalize(to).unwrap()
-}
-
-/// A `codex` that answers `--version`, `plugin list --json`, and the
-/// `plugin` commands install runs, keeping its state in `$CODEX_HOME`.
-/// `FAKE_CODEX_FAIL=add` makes `plugin add` fail.
-fn fake_codex() -> TestHome {
-    use std::os::unix::fs::PermissionsExt;
-    let dir = TestHome::new().unwrap();
-    let script = r#"#!/bin/sh
-S="$CODEX_HOME"
-mkdir -p "$S"
-echo "$*" >> "$S/calls.log"
-if [ "$1" = "--version" ]; then echo "codex-cli 0.163.0"; exit 0; fi
-[ "$1" = plugin ] || exit 2
-shift
-case "$1" in
-  --help) exit 0;;
-  list)
-    if [ -f "$S/installed.json" ]; then cat "$S/installed.json"; else echo '{"installed":[],"available":[]}'; fi;;
-  marketplace)
-    case "$2" in
-      add) printf '[marketplaces.teamwire]\nsource_type = "local"\nsource = "%s"\n' "$3" > "$S/config.toml"; echo "$3" > "$S/mdir";;
-      remove) rm -f "$S/config.toml";;
-    esac;;
-  add)
-    if [ "$FAKE_CODEX_FAIL" = add ]; then echo "boom" >&2; exit 1; fi
-    v=$(sed -n 's/.*"version": "\(.*\)".*/\1/p' "$(cat "$S/mdir")/teamwire/.codex-plugin/plugin.json")
-    printf '{"installed":[{"pluginId":"teamwire@teamwire","version":"%s","enabled":true}],"available":[]}\n' "$v" > "$S/installed.json";;
-  remove) rm -f "$S/installed.json";;
-esac
-"#;
-    let path = dir.path().join("codex");
-    std::fs::write(&path, script).unwrap();
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-    dir
 }
 
 /// A `pi` that answers `--version` and keeps the package list that
@@ -120,8 +81,6 @@ impl Bed {
         Self {
             home: TestHome::new().unwrap(),
             claude: TestHome::new().unwrap(),
-            codex: TestHome::new().unwrap(),
-            codex_bin: fake_codex(),
             user: TestHome::new().unwrap(),
             bins,
             _bin_dir: bin_dir,
@@ -162,22 +121,6 @@ impl Bed {
         self.teamwire_with(&self.binary("bin"), args, extra_env)
     }
 
-    /// `teamwire` with the fake `codex` on `PATH` and its home set.
-    fn teamwire_codex(&self, args: &[&str], extra_env: &[(&str, &str)]) -> Run {
-        let path = format!(
-            "{}:{}",
-            self.codex_bin.path().display(),
-            self.bins.path().display()
-        );
-        let codex_home = self.codex.path().display().to_string();
-        let mut env = vec![
-            ("PATH", path.as_str()),
-            ("TEAMWIRE_CODEX_HOME", &codex_home),
-        ];
-        env.extend_from_slice(extra_env);
-        self.teamwire(args, &env)
-    }
-
     /// `teamwire` with the fake `pi` on `PATH` and pi's directory in `dir`.
     fn teamwire_pi(&self, pi: &TestHome, dir: &Path, args: &[&str], extra: &[(&str, &str)]) -> Run {
         let path = format!("{}:{}", pi.path().display(), self.bins.path().display());
@@ -185,19 +128,6 @@ impl Bed {
         let mut env = vec![("PATH", path.as_str()), ("PI_CODING_AGENT_DIR", &dir)];
         env.extend_from_slice(extra);
         self.teamwire(args, &env)
-    }
-
-    fn codex_plugin_dir(&self) -> PathBuf {
-        self.home.path().join("codex-plugin")
-    }
-
-    /// The `codex` commands the fake saw, one per line.
-    fn codex_calls(&self) -> String {
-        std::fs::read_to_string(self.codex.path().join("calls.log")).unwrap_or_default()
-    }
-
-    fn codex_installed(&self) -> bool {
-        self.codex.path().join("installed.json").exists()
     }
 
     fn plugin_dir(&self) -> PathBuf {
@@ -450,81 +380,47 @@ fn uninstall_removes_the_plugin_the_marketplace_and_the_files_and_then_has_nothi
 }
 
 #[test]
-fn install_adds_the_codex_plugin_and_a_second_run_changes_nothing() {
-    let bed = Bed::new();
-    let run = bed.teamwire_codex(&["install", "--harness", "codex"], &[]);
-    assert_eq!(run.code, 0, "{}{}", run.out, run.err);
-    for line in [
-        "did write the teamwire plugin files",
-        "did add the Codex marketplace `teamwire`",
-        "did add the Codex plugin `teamwire@teamwire`",
-        "Codex will ask you to review the plugin's hook once",
-    ] {
-        assert!(run.out.contains(line), "{line}: {}", run.out);
-    }
-    assert!(bed.codex_installed());
-    assert!(!bed.marketplace_added(), "Claude Code was not asked for");
-    let dir = bed.codex_plugin_dir();
-    let hooks = std::fs::read_to_string(dir.join("teamwire/hooks/hooks.json")).unwrap();
-    let home = bed.home.path().display().to_string();
-    assert!(
-        hooks.contains(&format!(
-            "{} --home {home} hook lead-stop --harness codex",
-            bed.binary("bin").display()
-        )),
-        "{hooks}"
-    );
-    assert!(dir.join(".agents/plugins/marketplace.json").exists());
-    assert!(dir.join("teamwire/.codex-plugin/plugin.json").exists());
-
-    let again = bed.teamwire_codex(&["install", "--harness", "codex"], &[]);
-    assert_eq!(again.code, 0, "{}", again.err);
-    assert_eq!(again.out, "the lead setup is already installed\n");
-}
-
-#[test]
 fn install_covers_both_harnesses_when_both_are_named() {
     let bed = Bed::new();
-    let run = bed.teamwire_codex(&["install", "--harness", "claude-code,codex"], &[]);
+    let pi = fake_pi();
+    let agent = TestHome::new().unwrap();
+    let args = ["install", "--harness", "claude-code,pi"];
+    let run = bed.teamwire_pi(&pi, agent.path(), &args, &[]);
     assert_eq!(run.code, 0, "{}{}", run.out, run.err);
-    assert!(bed.codex_installed());
+    assert!(bed.home.path().join("pi-package").exists());
     assert!(bed.installed_root().is_some());
 }
 
 #[test]
 fn without_a_terminal_or_a_flag_install_keeps_to_claude_code() {
     let bed = Bed::new();
-    let run = bed.teamwire_codex(&["install"], &[]);
+    let pi = fake_pi();
+    let agent = TestHome::new().unwrap();
+    let run = bed.teamwire_pi(&pi, agent.path(), &["install"], &[]);
     assert_eq!(run.code, 0, "{}{}", run.out, run.err);
     assert!(bed.installed_root().is_some());
-    assert_eq!(bed.codex_calls(), "", "codex was not run");
-}
-
-#[test]
-fn a_codex_dry_run_prints_the_changes_and_makes_none() {
-    let bed = Bed::new();
-    let run = bed.teamwire_codex(&["install", "--harness", "codex", "--dry-run"], &[]);
-    assert_eq!(run.code, 0, "{}", run.err);
-    assert!(
-        run.out.contains("would add the Codex plugin"),
-        "{}",
-        run.out
-    );
-    assert!(!bed.codex_plugin_dir().exists());
-    assert!(!bed.codex_installed());
+    let calls = std::fs::read_to_string(agent.path().join("calls.log")).unwrap_or_default();
+    assert_eq!(calls, "", "pi was not run");
 }
 
 #[test]
 fn an_unknown_harness_is_a_usage_error_and_one_not_on_path_a_refusal_and_both_name_it() {
     let bed = Bed::new();
-    let run = bed.teamwire_codex(&["install", "--harness", "gemini"], &[]);
-    assert_eq!(run.code, 3, "{}", run.err);
-    assert!(run.err.contains("`gemini`"), "{}", run.err);
-    // `teamwire` without the fake `codex` on PATH.
-    let run = bed.teamwire(&["install", "--harness", "codex"], &[]);
+    // `codex` is an unknown id like any other since ADR 0054.
+    for name in ["gemini", "codex"] {
+        let run = bed.teamwire(&["install", "--harness", name], &[]);
+        assert_eq!(run.code, 3, "{name}: {}", run.err);
+        assert!(
+            run.err.contains(&format!("`{name}`")),
+            "{name}: {}",
+            run.err
+        );
+    }
+    // `teamwire` without the fake `pi` on PATH.
+    let run = bed.teamwire(&["install", "--harness", "pi"], &[]);
     assert_eq!(run.code, 1, "a refusal, not a usage error: {}", run.err);
-    assert!(run.err.contains("`codex` is not on PATH"), "{}", run.err);
-    assert!(!bed.codex_plugin_dir().exists());
+    assert!(run.err.contains("`pi` is not on PATH"), "{}", run.err);
+    assert!(!bed.home.path().join("pi-package").exists());
     assert!(bed.installed_root().is_none(), "nothing was changed");
 }
 
@@ -539,76 +435,48 @@ fn the_help_of_install_and_uninstall_names_the_plugin() {
 }
 
 #[test]
-fn a_failed_codex_install_exits_two_and_a_rerun_finishes() {
+fn uninstall_ignores_the_pi_setup_without_pi_and_removes_it_with_pi() {
     let bed = Bed::new();
-    let run = bed.teamwire_codex(
-        &["install", "--harness", "codex"],
-        &[("FAKE_CODEX_FAIL", "add")],
-    );
-    assert_eq!(run.code, 2, "{}", run.err);
-    assert!(run.err.contains("boom"), "{}", run.err);
-    assert!(
-        run.err.contains("already done: add the Codex marketplace"),
-        "{}",
-        run.err
-    );
-    assert!(!bed.codex_installed());
-    let rerun = bed.teamwire_codex(&["install", "--harness", "codex"], &[]);
-    assert_eq!(rerun.code, 0, "{}", rerun.err);
-    assert!(bed.codex_installed());
-}
-
-#[test]
-fn uninstall_removes_the_codex_setup_it_finds_and_ignores_it_without_codex() {
-    let bed = Bed::new();
-    assert_eq!(
-        bed.teamwire_codex(&["install", "--harness", "codex"], &[])
-            .code,
-        0
-    );
-    // Without `codex` on PATH there is nothing to run, so nothing is removed.
-    let none = bed.teamwire(&["uninstall"], &[]);
+    let pi = fake_pi();
+    let agent = TestHome::new().unwrap();
+    let install = bed.teamwire_pi(&pi, agent.path(), &["install", "--harness", "pi"], &[]);
+    assert_eq!(install.code, 0, "{}", install.err);
+    // Without `pi` on PATH there is nothing to run, so nothing is removed.
+    let dir = agent.path().display().to_string();
+    let none = bed.teamwire(&["uninstall"], &[("PI_CODING_AGENT_DIR", &dir)]);
     assert_eq!(none.out, "no lead setup to remove\n", "{}", none.err);
-    assert!(bed.codex_installed());
+    assert!(bed.home.path().join("pi-package").exists());
 
-    let run = bed.teamwire_codex(&["uninstall"], &[]);
+    let run = bed.teamwire_pi(&pi, agent.path(), &["uninstall"], &[]);
     assert_eq!(run.code, 0, "{}{}", run.out, run.err);
     for line in [
-        "did remove the Codex plugin `teamwire@teamwire`",
-        "did remove the Codex marketplace `teamwire`",
-        "did delete the teamwire plugin files",
+        "did remove the pi package",
+        "did delete the teamwire pi package",
     ] {
         assert!(run.out.contains(line), "{line}: {}", run.out);
     }
-    assert!(!bed.codex_installed());
-    assert!(!bed.codex_plugin_dir().exists());
-    let again = bed.teamwire_codex(&["uninstall"], &[]);
+    assert!(!bed.home.path().join("pi-package").exists());
+    let again = bed.teamwire_pi(&pi, agent.path(), &["uninstall"], &[]);
     assert_eq!(again.out, "no lead setup to remove\n");
 }
 
 #[test]
-fn an_old_codex_does_not_block_the_claude_uninstall() {
+fn a_broken_pi_setup_does_not_block_the_claude_uninstall() {
     let bed = Bed::new();
     assert_eq!(bed.teamwire(&["install"], &[]).code, 0);
-    // A codex that runs `--version` but has no `plugin` command.
-    let old = TestHome::new().unwrap();
-    let script = "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo codex-cli 0.39.0; exit 0; fi\necho 'unrecognized subcommand' >&2\nexit 2\n";
-    let path = old.path().join("codex");
-    std::fs::write(&path, script).unwrap();
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-    }
-    let on_path = format!("{}:{}", old.path().display(), bed.bins.path().display());
+    // A pi that runs `--version`, beside a settings file it cannot read.
+    let pi = fake_pi();
+    let agent = TestHome::new().unwrap();
+    std::fs::write(agent.path().join("settings.json"), "not json").unwrap();
     for dry in [true, false] {
         let args: &[&str] = if dry {
             &["uninstall", "--dry-run"]
         } else {
             &["uninstall"]
         };
-        let run = bed.teamwire(args, &[("PATH", on_path.as_str())]);
+        let run = bed.teamwire_pi(&pi, agent.path(), args, &[]);
         assert_eq!(run.code, 0, "{}", run.err);
-        assert!(run.err.contains("skipped the Codex part"), "{}", run.err);
+        assert!(run.err.contains("skipped the pi part"), "{}", run.err);
         assert!(
             run.out.contains("the plugin `teamwire@teamwire`"),
             "{}",
@@ -616,13 +484,10 @@ fn an_old_codex_does_not_block_the_claude_uninstall() {
         );
     }
     assert!(bed.installed_root().is_none());
-    // Asking for Codex by name still fails clearly.
-    let run = bed.teamwire(
-        &["install", "--harness", "codex"],
-        &[("PATH", on_path.as_str())],
-    );
+    // Asking for pi by name still fails clearly.
+    let run = bed.teamwire_pi(&pi, agent.path(), &["install", "--harness", "pi"], &[]);
     assert_eq!(run.code, 1, "{}", run.err);
-    assert!(run.err.contains("codex plugin list --json"), "{}", run.err);
+    assert!(run.err.contains("settings.json"), "{}", run.err);
 }
 
 #[test]

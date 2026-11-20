@@ -410,8 +410,8 @@ fn a_relative_home_reaches_members_as_an_absolute_path() {
 fn a_member_whose_harness_program_is_missing_is_refused_before_anything_is_created() {
     let rig = Rig::new();
     let spec = json!({"team": "demo", "title": "Demo team", "children": [
-        {"role": "cx", "title": "Codex work", "mode": "pane", "cwd": rig.work.path(),
-         "task": "look around", "harness": "codex"}]});
+        {"role": "scout", "title": "pi work", "mode": "pane", "cwd": rig.work.path(),
+         "task": "look around", "harness": "pi"}]});
     let file = rig.spec_file(&spec);
     for extra in [&["--dry-run"][..], &[][..]] {
         let mut args = extra.to_vec();
@@ -425,11 +425,38 @@ fn a_member_whose_harness_program_is_missing_is_refused_before_anything_is_creat
         );
         let err = text(&out.stderr);
         assert!(
-            err.contains("refused: member cx: harness codex is not on PATH"),
+            err.contains("refused: member scout: harness pi is not on PATH"),
             "{err}"
         );
         assert!(!text(&out.stdout).contains("would launch"));
         assert!(rig.home_is_empty(), "{extra:?}: no team directory");
+    }
+}
+
+/// `codex` gets the refusal every unknown id gets, with no message of its
+/// own (ADR 0054 decision 2).
+#[test]
+fn a_spec_that_names_codex_is_refused_as_an_unknown_harness() {
+    let rig = Rig::new();
+    for id in ["nonesuch", "codex"] {
+        let spec = json!({"team": "demo", "title": "Demo team", "harness": id, "children": [
+            {"role": "cx", "title": "Some work", "mode": "pane", "cwd": rig.work.path(),
+             "task": "look around"}]});
+        let file = rig.spec_file(&spec);
+        let out = rig.launch(
+            &["--dry-run", "--spec", file.to_str().unwrap()],
+            None,
+            false,
+        );
+        assert_eq!(out.status.code(), Some(1), "{id}: {}", text(&out.stdout));
+        let err = text(&out.stderr);
+        assert!(
+            err.contains(&format!(
+                "refused [cx]: unknown_harness: this binary has no harness adapter {id}"
+            )),
+            "{id}: {err}"
+        );
+        assert!(rig.home_is_empty(), "{id}: no team directory");
     }
 }
 

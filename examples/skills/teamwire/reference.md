@@ -17,8 +17,8 @@ Read this when:
 
 ## Setting up a machine
 
-This section describes Claude Code. A Codex or pi lead finds its own setup
-in its part at the top of the skill.
+This section describes Claude Code. A pi lead finds its own setup in its
+part at the top of the skill.
 
 teamwire never edits `~/.claude/settings.json` or `~/.claude.json`. Only
 `teamwire install` and `teamwire uninstall` change Claude Code's setup,
@@ -195,12 +195,12 @@ messages that follow the reprompt are typed as usual.
 
 If the command fails after it closed the old session, run
 `teamwire reopen <team> --role <role>` once the old session has ended. That
-resumes the old session, with its full context. The command writes the old
-session back first when it can. When the member had no recorded session, the
-error says `reopen` has nothing to resume.
+resumes the old session, with its full context. The failed command leaves the
+old session recorded. When the member had no recorded session, the error says
+`reopen` has nothing to resume.
 
 A Claude Code member that passes its point and gets no handoff compacts its
-own context at twice that point. teamwire sets no compaction for Codex and pi
+own context at twice that point. teamwire sets no compaction for pi
 members, so hand them off at the `CONTEXT` line.
 
 ## Lead handoff
@@ -238,10 +238,7 @@ seconds unless the call sets a longer `timeout`.
    session there, with its first prompt as a command-line argument.
 4. On Claude Code and pi, it waits up to 90 seconds, or `spawn_timeout_s`
    when that is lower, until the new session shows in that pane, then
-   records the new session as the lead of each team. A new Codex lead
-   picks its own session id, so its first prompt tells it to run
-   `teamwire lead --adopt <team>` for each team. The command waits up to
-   180 seconds for that.
+   records the new session as the lead of each team.
 5. It moves the sleep hold to the new lead and prints the result.
 6. It closes your pane.
 
@@ -267,7 +264,7 @@ with `--model <id>[1m]` avoids it.
 | 1 | The handoff document is missing | Nothing | Run `teamwire lead --handoff-guide`, write the document, and run the command again |
 | 1 | Your pane cannot be located | Nothing | Read the locator's code in the line. Hand off by hand when you cannot fix it |
 | 2 | The new pane could not be opened, or the new session did not show in it | Nothing. The command closed the new pane | You are still the lead. Carry on, or run the command again |
-| 2 | A team's write failed, or a new Codex lead did not adopt every team within 180 seconds | Some teams moved and some did not. Both panes stay open | The new lead runs `teamwire lead --adopt <team>` for each team the output names. That command also moves the team's sleep hold to the new lead. Then end your turn, and the user closes your pane |
+| 2 | A team's write failed | Some teams moved and some did not. Both panes stay open | The new lead runs `teamwire lead --adopt <team>` for each team the output names. That command also moves the team's sleep hold to the new lead. Then end your turn, and the user closes your pane |
 | 6 | An open team's store cannot be read | Nothing | Run `teamwire doctor` |
 
 To hand off by hand, start a fresh lead session in a new pane. Its first
@@ -281,8 +278,8 @@ A `warning:` line never stops the handoff. One names each flag of yours that
 the new lead does not get. One says your newest permission mode is one the
 new lead cannot be started with, so it starts with no permission flag; set
 the mode again in the new lead if you need it. One says your arguments could
-not be read, so the new lead starts with no flag carried from them. A Codex
-or pi lead then starts without your approval flags, so run `--dry-run` first
+not be read, so the new lead starts with no flag carried from them. A pi
+lead then starts without your approval flags, so run `--dry-run` first
 and hand off by hand when it prints that line. One says the document is
 older than the note, so check that the document is current. One says a sleep
 hold was not moved.
@@ -436,7 +433,7 @@ Approve only when all of these hold: the call serves the member's task in its br
 
 Deny a call that deletes or overwrites anything outside those folders, rewrites git history, removes a branch or a worktree, pushes, publishes or deploys, changes the user's setup (`~/.claude/` or other dotfiles), or installs software. Deny anything you cannot read whole, and a call far bigger than its step, such as `rm -rf` of a parent folder to clear one build output. A `\u{...}` in a command marks a character the terminal would hide or reorder: deny the call unless you know why it is there. The `--reason` tells the member why and what to do instead, for example `this removes all of target/; remove only target/debug/foo, by name`. A denial closes the dialog at once. The member's model reads, as the result of its call, a text that starts `DIALOG DENIED:`, quotes the command, gives your reason, and tells it not to run the command another way. Neither command types into the member's pane or sends it a message.
 
-`--approve` allows this one call. It never writes an always-allow rule. teamwire answers only Bash, Write, Edit and WebFetch calls, and only a call whose input it can show whole. `dialog answer` refuses, with exit 1 and nothing answered, when you are not the team's lead session, when the id names no pending dialog of that member's current session, after the dialog's time ran out, or for a member whose harness cannot answer. After the time ran out (`refused.expired`), the member's hook has given up and Claude Code denies the call on its own: to tell the member not to retry it, send a note with `teamwire send`. Exit 7 means your answer is recorded but the member's hook did not take it within 5 s: run `dialog show` and read the screen. A line `BLOCKED <role> permission (teamwire cannot answer it)` means nobody can answer it from here: Claude Code denies it on its own, or, for a dialog with no countdown, it waits for the user. Codex and pi members never show a tool-permission dialog.
+`--approve` allows this one call. It never writes an always-allow rule. teamwire answers only Bash, Write, Edit and WebFetch calls, and only a call whose input it can show whole. `dialog answer` refuses, with exit 1 and nothing answered, when you are not the team's lead session, when the id names no pending dialog of that member's current session, after the dialog's time ran out, or for a member whose harness cannot answer. After the time ran out (`refused.expired`), the member's hook has given up and Claude Code denies the call on its own: to tell the member not to retry it, send a note with `teamwire send`. Exit 7 means your answer is recorded but the member's hook did not take it within 5 s: run `dialog show` and read the screen. A line `BLOCKED <role> permission (teamwire cannot answer it)` means nobody can answer it from here: Claude Code denies it on its own, or, for a dialog with no countdown, it waits for the user. pi members never show a tool-permission dialog.
 
 ## Spec-kit features
 
@@ -453,15 +450,12 @@ facts come from spec-kit 1.3.3.dev0 at commit c438494, the version that
 `.specify/integration.json` records and doctor's `spec-kit version` line
 prints. Check them again after a spec-kit upgrade.
 
-No run has tested two parts of this section. Tell the user before you pick
-either one:
+No run has tested one part of this section. Tell the user before you pick
+it:
 
 - A split per user story: the merge of tick lines from parallel members,
   the fix round on a branch cut from the integrator's branch, and the
   per-member `outside-owns` waivers. The pilot ran one implementer.
-- Codex as a member: a Codex member that runs `$speckit-<cmd>` from
-  `.agents/skills/` in a worktree. The pilot ran Claude Code and pi
-  members only.
 
 AFK runs a spec-kit feature only from a `spec.md`, `plan.md` and `tasks.md`
 that the user already reviewed and committed. The spec stage needs the
@@ -479,8 +473,8 @@ before launch:
 
 - `.specify/`, from `specify init --here --force --integration claude`, or
   with the integration of your first member harness.
-- The command folder of each member harness. Add the others with
-  `specify integration install codex` and `specify integration install pi`.
+- The command folder of each member harness. Add pi's with
+  `specify integration install pi`.
 - A written `.specify/memory/constitution.md`. `init` leaves it as a
   template full of placeholders. Write it with the user, through spec-kit's
   `constitution` command, before the first feature.
@@ -506,12 +500,12 @@ before launch:
 | --- | --- |
 | `spec-kit base` | Printed alone, in place of the nine lines, when git cannot resolve the `--base` ref to a commit. Pass `--base` a branch or commit that exists, or make the first commit. When git refuses for another reason, such as dubious ownership, the line quotes git's first stderr line: run `git status` in the repository to see why. |
 | `spec-kit version` | `.specify/integration.json` in the commit records a version outside the 1.3 line, or none. The `ok` line prints the version and says the guidance was tested with 1.3.3.dev0 (spec-kit commit c438494). With spec-kit 1.3 installed (`specify --version`), run `specify integration upgrade <key>` for each integration, then commit on the ref. With no version recorded, fix `.specify/integration.json` as the `spec-kit integrations` line says. |
-| `spec-kit committed` | A spec-kit file is on disk but not in the commit, so a worktree member does not get it: a file under `.specify/`, except `feature.json` and what `.specify/.gitignore` ignores, or a `speckit-` entry of `.claude/skills`, `.agents/skills` or `.pi/prompts`. The line names each path as changed, new (in git's index but not in the commit), untracked or git-ignored, with the ignore rule and its file and line. Remove each ignore rule it names, such as the `.claude/` rule that `specify init` advises. Run the `git add` it prints, which also names each ignore file you edited, such as `git add .claude/skills/speckit-* .gitignore`, then commit on the ref. When the ref is not the checked-out branch, run `git switch <ref>` and commit there, or commit here and merge this branch into the ref, as the line says. |
+| `spec-kit committed` | A spec-kit file is on disk but not in the commit, so a worktree member does not get it: a file under `.specify/`, except `feature.json` and what `.specify/.gitignore` ignores, or a `speckit-` entry of `.claude/skills` or `.pi/prompts`. The line names each path as changed, new (in git's index but not in the commit), untracked or git-ignored, with the ignore rule and its file and line. Remove each ignore rule it names, such as the `.claude/` rule that `specify init` advises. Run the `git add` it prints, which also names each ignore file you edited, such as `git add .claude/skills/speckit-* .gitignore`, then commit on the ref. When the ref is not the checked-out branch, run `git switch <ref>` and commit there, or commit here and merge this branch into the ref, as the line says. |
 | `spec-kit constitution` | `.specify/memory/constitution.md` in the commit still holds a template placeholder, such as `[PROJECT_NAME]`, or is not in the commit. A written copy on disk that is not committed does not count, and the `ok` line says when the copy on disk differs. Write it with spec-kit's `constitution` command, such as `/speckit-constitution`, then commit it on the ref. |
-| `spec-kit integrations` | An integration listed in the committed `.specify/integration.json`, in its current or its older format, has no command folder with `speckit-` command files in the commit: `.claude/skills/speckit-*` for `claude`, `.agents/skills/speckit-*` for `codex`, `.pi/prompts/speckit.*.md` for `pi`. Run `specify integration upgrade <key>`, then commit the folder on the ref. A folder that is only on disk is committed as the `spec-kit committed` line says. When `integration.json` is missing, run `specify integration install <key>` for each integration members use, then commit. When it is broken, delete it first. The `ok` line lists the installed integrations. |
+| `spec-kit integrations` | An integration listed in the committed `.specify/integration.json`, in its current or its older format, has no command folder with `speckit-` command files in the commit: `.claude/skills/speckit-*` for `claude`, `.pi/prompts/speckit.*.md` for `pi`. Run `specify integration upgrade <key>`, then commit the folder on the ref. A folder that is only on disk is committed as the `spec-kit committed` line says. When `integration.json` is missing, run `specify integration install <key>` for each integration members use, then commit. When it is broken, delete it first. The `ok` line lists the installed integrations. |
 | `spec-kit git extension` | `.specify/extensions.yml` in the commit lists the `git` extension under `installed:`, but teamwire owns the branches and worktrees. Run `specify extension remove git`, then commit on the ref. |
 | `spec-kit hooks` | `.specify/extensions.yml` in the commit has a hook that a member must run (`optional: false`), from an enabled extension other than `git`. The line names each extension, its command and its event. Read what each command runs, then run `specify extension remove <ext>` or set `optional: true` on the hook in `.specify/extensions.yml`, then commit on the ref. `specify extension disable <ext>` also clears it. A hook or extension with `enabled: false` does not count. |
-| `spec-kit events` | A spec-kit runtime event is set up in the commit: `.claude/settings.json` holds a hook tagged `"__speckit_event__": true`, `.codex/config.toml` holds a hook marked `speckit_marker = true`, or `.specify/` holds the events script those hooks run. Each hook runs a spec-kit script in every member session, and teamwire refuses to start a Codex member while `.codex/config.toml` is in the repository. Run `specify extension remove <ids>` or `specify extension disable <ids>`, or `specify integration upgrade <key> --force --integration-options="--events false"` for each installed integration, then commit on the ref. A `.codex/config.toml` or `.codex/hooks.json` that is only on disk also warns: remove it from the repository. A manifest that declares `events:` while spec-kit wrote no hook, such as a disabled extension or an integration with `--events false`, is `ok`, with a note. |
+| `spec-kit events` | A spec-kit runtime event is set up in the commit: `.claude/settings.json` holds a hook tagged `"__speckit_event__": true`, or `.specify/` holds the events script those hooks run. Each hook runs a spec-kit script in every member session. Run `specify extension remove <ids>` or `specify extension disable <ids>`, or `specify integration upgrade <key> --force --integration-options="--events false"` for each installed integration, then commit on the ref. A manifest that declares `events:` while spec-kit wrote no hook, such as a disabled extension or an integration with `--events false`, is `ok`, with a note. |
 | `spec-kit feature pointer` | git does not ignore `.specify/feature.json`, so members would commit their pointer to the feature: add `feature.json` to `.specify/.gitignore`, then commit on the ref. When the file is tracked in the commit, the ignore rule does not apply, because git ignores only untracked files: run `git rm --cached .specify/feature.json`, then commit on the ref. |
 | `spec-kit workflows` | Never a `warn`. The line lists the installed workflow ids and says teamwire starts none of them. |
 
@@ -521,10 +515,9 @@ before launch:
 runs `specify workflow run`, and no teamwire member does.
 
 The `git` extension creates and switches branches, and teamwire owns the
-branches. An extension with `events:` writes `.codex/config.toml`, and
-Codex launch refuses a repository that holds that file. The same extension
-writes hooks into `.claude/settings.json`, and those hooks run unreviewed
-with the member's rights. Remove such an extension before launch. An
+branches. An extension with `events:` writes hooks into
+`.claude/settings.json`, and those hooks run unreviewed with the member's
+rights. Remove such an extension before launch. An
 extension declares its `events:` in its own manifest,
 `.specify/extensions/<id>/extension.yml`, not in `.specify/extensions.yml`,
 and `.specify/integration-events.yml` overrides them. Doctor warns only on
@@ -544,7 +537,6 @@ remove the extension or make the hook optional, then commit.
 | harness | command files | how a member runs `implement` |
 | --- | --- | --- |
 | Claude Code | `.claude/skills/speckit-<cmd>/SKILL.md` | `/speckit-implement <scope>` |
-| Codex | `.agents/skills/speckit-<cmd>/SKILL.md` | `$speckit-implement <scope>` |
 | pi | `.pi/prompts/speckit.<cmd>.md` | teamwire starts pi with `--no-approve` (ADR 0029), which skips the folder's prompt files. The brief says: read `.pi/prompts/speckit.implement.md` and follow it, with `$ARGUMENTS` set to the scope. |
 
 The other commands follow the same pattern, such as `/speckit-analyze`,
