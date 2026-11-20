@@ -130,7 +130,12 @@ fn run(
 
     let mut check_error = None;
     if !t.hold_already_active {
-        let corrective = owed(ctx, &member, latest.as_ref())?;
+        // The corrective hold is a backstop: a store it cannot read (a
+        // damaged reprompt) costs the hold, never the member's result.
+        let corrective = owed(ctx, &member, latest.as_ref()).unwrap_or_else(|e| {
+            tracing::warn!(error = %e, role = %member.role, "could not check the reprompt hold");
+            None
+        });
         let (note, error) = hold(ctx, &member, latest.as_ref(), corrective.as_ref(), started)?;
         if let Some(note) = note {
             return Ok(TurnEndReply::Hold(note));
@@ -229,6 +234,54 @@ fn hold(
         return Ok((None, check_error));
     }
     let ids: Vec<String> = unread.iter().map(|u| u.display_id.clone()).collect();
+    let at = ctx.clock.now();
+    let mut data = json!({
+        "hook": hook_name(&member.harness),
+        "hook_ms": hook_ms(ctx, started),
+        "gaps": gaps,
+        "unread": ids,
+    });
+    if let (Some(fields), Some(error)) = (data.as_object_mut(), &check_error) {
+        fields.insert("report_check_error".to_owned(), json!(error));
+    }
+    let recipient = teamwire_core::Recipient::Member(member.role.clone());
+    // The corrective hold is claimed in the write that records it: two
+    // stops of one generation that both found it owed run one after the
+    // other here, and only the first records it (ADR 0059).
+    let held = ctx.store.write(|tx| {
+        let claimed = match corrective {
+            Some(_) => !crate::reprompt_hold::already_held(&tx.reader(), member)?,
+            None => false,
+        };
+        if !told && unread.is_empty() && !claimed {
+            return Ok(false);
+        }
+        let mut data = data.clone();
+        if let (Some(fields), Some(c), true) = (data.as_object_mut(), corrective, claimed) {
+            fields.insert("corrective".to_owned(), c.data());
+        }
+        if told {
+            tx.hold_member(at, &member.role, member.generation, &data)?;
+        } else {
+            tx.hold_member_unread(at, &member.role, &data)?;
+        }
+        for u in &unread {
+            // A message read since the list was made is left alone.
+            tx.mark_reminded(at, &u.message, &recipient).ok();
+        }
+        Ok(claimed)
+    });
+    // The member still hears the facts. With nothing recorded, the next
+    // stop may hold once more, which is better than a result it never fixed.
+    let corrective = match held {
+        Ok(true) => corrective,
+        Ok(false) if !told && ids.is_empty() => return Ok((None, check_error)),
+        Ok(false) => None,
+        Err(e) => {
+            tracing::warn!(error = %e, role = %member.role, "could not record the hold");
+            corrective
+        }
+    };
     let mut parts = Vec::new();
     if told {
         parts.push(gap_note(
@@ -242,39 +295,6 @@ fn hold(
     }
     if !ids.is_empty() {
         parts.push(format!("{} {READ_THEN_STOP}", unread_note(&ids)));
-    }
-    let at = ctx.clock.now();
-    let mut data = json!({
-        "hook": hook_name(&member.harness),
-        "hook_ms": hook_ms(ctx, started),
-        "gaps": gaps,
-        "unread": ids,
-    });
-    if let Some(fields) = data.as_object_mut() {
-        if let Some(error) = &check_error {
-            fields.insert("report_check_error".to_owned(), json!(error));
-        }
-        if let Some(c) = corrective {
-            fields.insert("corrective".to_owned(), c.data());
-        }
-    }
-    let recipient = teamwire_core::Recipient::Member(member.role.clone());
-    let held = ctx.store.write(|tx| {
-        if told {
-            tx.hold_member(at, &member.role, member.generation, &data)?;
-        } else {
-            tx.hold_member_unread(at, &member.role, &data)?;
-        }
-        for u in &unread {
-            // A message read since the list was made is left alone.
-            tx.mark_reminded(at, &u.message, &recipient).ok();
-        }
-        Ok(())
-    });
-    // The member still hears the facts. With nothing recorded, the next
-    // stop may hold once more, which is better than a result it never fixed.
-    if let Err(e) = held {
-        tracing::warn!(error = %e, role = %member.role, "could not record the hold");
     }
     Ok((Some(parts.join(" ")), check_error))
 }

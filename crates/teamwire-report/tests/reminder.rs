@@ -561,3 +561,161 @@ fn a_closing_team_holds_nobody() {
     ));
     assert!(corrective_holds(&rig).is_empty());
 }
+
+/// Records `status` with `summary` for `who` now, through the member's own
+/// `done`.
+fn done_with(rig: &mut Rig, who: &Role, status: teamwire_core::CompletionStatus, summary: &str) {
+    report_ok(rig, who);
+    teamwire_report::done(&mut rig.ctx(), who, status, summary).unwrap();
+}
+
+#[test]
+fn a_later_reprompt_whose_generation_was_undone_leaves_the_first_reprompts_hold() {
+    let (mut rig, api) = team();
+    let (_, id) = reprompt(&mut rig, &api, 301);
+    on_tool_use(&mut rig.ctx(), &api);
+    // A second reprompt bumps to generation 3, its delivery fails, and
+    // generation 2 is given back: the first reprompt still owns it.
+    let at = rig.clock.now();
+    let started = rig
+        .store
+        .read(|tx| tx.member(&api))
+        .unwrap()
+        .unwrap()
+        .gen_started_at;
+    rig.store
+        .write(|tx| {
+            tx.bump_generation(at, &api, "m002")?;
+            tx.restore_generation(at, &api, 2, started, EventType::MemberReprompted)
+        })
+        .unwrap();
+    assert_eq!(generation(&rig, &api), 2);
+    let note = hold_note(on_turn_end(&mut rig.ctx(), &api, &stop("api-1")));
+    assert!(
+        note.contains(&format!("Reprompt {id} from the lead")),
+        "{note}"
+    );
+    let holds = corrective_holds(&rig);
+    assert_eq!(holds.len(), 1, "{holds:?}");
+    assert_eq!(holds[0]["message"], id.as_str());
+}
+
+#[test]
+fn a_damaged_reprompt_does_not_stop_the_recorded_result_from_being_delivered() {
+    let (mut rig, api) = team();
+    let (_, id) = reprompt(&mut rig, &api, 301);
+    done_with(
+        &mut rig,
+        &api,
+        teamwire_core::CompletionStatus::Done,
+        "finished the api",
+    );
+    rig.store
+        .write(|tx| {
+            tx.connection().execute(
+                "UPDATE messages SET body = 'damaged' WHERE display_id = ?1",
+                [id.as_str()],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    let reply = on_turn_end(&mut rig.ctx(), &api, &stop("api-1"));
+    assert!(matches!(reply, TurnEndReply::Continue), "{reply:?}");
+    assert_eq!(
+        rig.newest(&api).completion.report_state,
+        ReportState::Delivered
+    );
+    assert_eq!(rig.typed_to_lead().len(), 1, "{:?}", rig.typed_to_lead());
+}
+
+#[test]
+fn a_handoff_or_a_question_round_is_not_held_for_the_reprompt() {
+    for (status, summary) in [
+        (
+            teamwire_core::CompletionStatus::Done,
+            "handoff: fresh session",
+        ),
+        (
+            teamwire_core::CompletionStatus::Blocked,
+            "1 question for the parent. Which port?",
+        ),
+        (
+            teamwire_core::CompletionStatus::Blocked,
+            "handoff: 2 questions for the parent. Which port, which host?",
+        ),
+    ] {
+        let (mut rig, api) = team();
+        reprompt(&mut rig, &api, 301);
+        on_tool_use(&mut rig.ctx(), &api);
+        done_with(&mut rig, &api, status, summary);
+        let reply = on_turn_end(&mut rig.ctx(), &api, &stop("api-1"));
+        assert!(
+            corrective_holds(&rig).is_empty(),
+            "{summary}: {:?}",
+            corrective_holds(&rig)
+        );
+        if let TurnEndReply::Hold(note) = reply {
+            assert!(!note.contains("Reprompt m001"), "{summary}: {note}");
+        }
+    }
+}
+
+#[test]
+fn a_member_that_may_not_send_is_not_told_to_ask_a_question() {
+    let (mut rig, api) = team();
+    rig.store
+        .write(|tx| {
+            tx.connection()
+                .execute("UPDATE members SET kind = 'closer' WHERE role = 'api'", [])?;
+            Ok(())
+        })
+        .unwrap();
+    let (message, _) = reprompt(&mut rig, &api, 301);
+    ack(&mut rig, &api, &message);
+    let note = hold_note(on_turn_end(&mut rig.ctx(), &api, &stop("api-1")));
+    assert!(note.contains("no result"), "{note}");
+    assert!(!note.contains("question"), "{note}");
+    assert!(note.contains("record blocked"), "{note}");
+}
+
+/// Stops of one generation that run at the same time, each on its own
+/// connection, as hook processes do, record one corrective hold between
+/// them, and only that stop is held for it.
+#[test]
+fn stops_at_the_same_time_record_one_corrective_hold() {
+    let (mut rig, api) = team();
+    reprompt(&mut rig, &api, 301);
+    on_tool_use(&mut rig.ctx(), &api);
+    let team = teamwire_core::TeamName::parse("alpha").unwrap();
+    let start = std::sync::Barrier::new(8);
+    let held: usize = std::thread::scope(|s| {
+        let runs: Vec<_> = (0..8)
+            .map(|_| {
+                s.spawn(|| {
+                    let mut store = teamwire_store::Store::open(rig.home.path(), &team).unwrap();
+                    let mut ctx = teamwire_store::Ctx {
+                        home: rig.home.path(),
+                        store: &mut store,
+                        registry: &rig.registry,
+                        platform: &rig.platform,
+                        clock: &*rig.clock,
+                        config: &rig.config,
+                    };
+                    start.wait();
+                    match on_turn_end(&mut ctx, &api, &stop("api-1")) {
+                        TurnEndReply::Hold(note) => usize::from(note.contains("Reprompt m001")),
+                        TurnEndReply::Continue => 0,
+                    }
+                })
+            })
+            .collect();
+        runs.into_iter().map(|r| r.join().unwrap()).sum()
+    });
+    assert_eq!(held, 1, "stops held for the reprompt");
+    assert_eq!(
+        corrective_holds(&rig).len(),
+        1,
+        "{:?}",
+        corrective_holds(&rig)
+    );
+}

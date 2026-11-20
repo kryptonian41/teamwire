@@ -45,6 +45,9 @@ pub(crate) struct Corrective {
     pub(crate) generation: u32,
     pub(crate) from_user: bool,
     pub(crate) reason: Reason,
+    /// Whether the member may send the lead a question. A reviewer, plan
+    /// reviewer or closer may not, so its note does not tell it to.
+    pub(crate) may_ask: bool,
 }
 
 impl Corrective {
@@ -74,12 +77,19 @@ impl Corrective {
                  names, do what it asks, update your report, and record done, blocked or failed \
                  for it."
             ),
-            Reason::NoResult => format!(
-                "Reprompt {id} from {from} started a new generation, and it has no result yet: \
-                 an answer in chat or a finding is not a result. Update your report and record \
-                 done, blocked or failed with team_done (mcp__teamwire__team_done) or the done \
-                 command your contract names; if you cannot go on, ask the lead with a question."
-            ),
+            Reason::NoResult => {
+                let stuck = if self.may_ask {
+                    "if you cannot go on, ask the lead with a question"
+                } else {
+                    "if you cannot go on, record blocked with the reason"
+                };
+                format!(
+                    "Reprompt {id} from {from} started a new generation, and it has no result \
+                     yet: an answer in chat or a finding is not a result. Update your report and \
+                     record done, blocked or failed with team_done (mcp__teamwire__team_done) or \
+                     the done command your contract names; {stuck}."
+                )
+            }
         }
     }
 }
@@ -89,10 +99,13 @@ impl Corrective {
 ///
 /// None when: the team is not open (a close is under way); the generation
 /// was not started by a reprompt from the lead or the user (a wake, a
-/// handoff, launch, or an undone reprompt); this generation already had its
-/// corrective hold; the reprompt is held for a handoff or still being sent;
-/// the member waits for an answer to a question it asked in the generation;
-/// or the reprompt is read and the generation has a result.
+/// handoff, launch, or an undone reprompt; an undone later bump does not
+/// hide the reprompt that still owns the generation); this generation
+/// already had its corrective hold; the reprompt is held for a handoff or
+/// still being sent; the member waits for an answer to a question it asked
+/// in the generation; its current result is a handoff or a question round,
+/// whose stop belongs to that wait; or the reprompt is read and the
+/// generation has a result.
 pub(crate) fn owed(
     ctx: &Ctx<'_>,
     member: &Member,
@@ -110,19 +123,17 @@ fn owed_in(
         return Ok(None);
     }
     let role = &member.role;
-    let started_by = tx.latest_of_kinds(
-        Some(role),
-        &[
-            EventType::MemberReprompted,
-            EventType::MemberWoken,
-            EventType::MemberHandoff,
-        ],
-    )?;
-    let Some(start) = started_by.filter(|e| {
-        e.kind == EventType::MemberReprompted
-            && e.data.get("generation").and_then(Value::as_u64)
-                == Some(u64::from(member.generation))
-    }) else {
+    if latest.is_some_and(|r| {
+        teamwire_core::completion::is_handoff(&r.completion.summary)
+            || (r.completion.status == teamwire_core::CompletionStatus::Blocked
+                && teamwire_core::completion::asks_the_parent(&r.completion.summary))
+    }) {
+        return Ok(None);
+    }
+    let Some(start) = tx
+        .generation_start(role, member.generation)?
+        .filter(|e| e.kind == EventType::MemberReprompted)
+    else {
         return Ok(None);
     };
     let Some(id) = start.data.get("message").and_then(Value::as_str) else {
@@ -170,12 +181,14 @@ fn owed_in(
         generation: member.generation,
         from_user: message.sender == Actor::User,
         reason,
+        may_ask: member.kind.may_send(MessageType::Question),
     }))
 }
 
 /// Whether a `member.held` event of this generation already carries a
-/// corrective hold.
-fn already_held(tx: &ReadTx<'_>, member: &Member) -> Result<bool, StoreError> {
+/// corrective hold. The hold's write runs this again inside its own
+/// transaction, so two stops that both found none still record one.
+pub(crate) fn already_held(tx: &ReadTx<'_>, member: &Member) -> Result<bool, StoreError> {
     let held = tx.events_of_kinds(&member.role, &[EventType::MemberHeld])?;
     Ok(held.iter().any(|e| {
         e.data
