@@ -125,7 +125,7 @@ fn a_bare_close_after_a_refused_send_refuses_in_the_plan_and_the_close() {
 }
 
 #[test]
-fn a_message_the_lead_stored_after_the_refusal_lets_an_ordinary_close_run() {
+fn a_message_the_lead_stored_after_the_refusal_answers_the_refused_send() {
     let mut rig = blocked_then_refused();
     let now = rig.clock.now();
     rig.store
@@ -145,23 +145,135 @@ fn a_message_the_lead_stored_after_the_refusal_lets_an_ordinary_close_run() {
             .map(|_| ())
         })
         .unwrap();
+    let plan = plan_close_with(&rig.ctx(), CloseTarget::Team, &CloseOpts::default());
+    let why = plan.refusals.join("; ");
+    assert!(!why.contains("newest send was refused"), "{why}");
+    // The blocked result still needs a decision.
+    assert!(
+        why.contains("short's current result is blocked (generation 3)"),
+        "{why}"
+    );
+}
+
+/// A team whose members are as given, with no send of the lead recorded at
+/// all, refused or stored: a client that checked the call itself and never
+/// reached teamwire leaves no row.
+fn team_of(results: &[(&str, u32, Option<CompletionStatus>)]) -> Rig {
+    let mut rig = Rig::new();
+    for (name, _, _) in results {
+        rig.add_pane_member(name, MemberKind::Investigator);
+    }
+    let now = rig.clock.now();
+    rig.store
+        .write(|tx| {
+            for (name, generation, status) in results {
+                let who = role(name);
+                while tx.reader().member(&who)?.unwrap().generation < *generation {
+                    tx.bump_generation(now, &who, "m001")?;
+                }
+                if let Some(status) = status {
+                    tx.insert_completion(
+                        now,
+                        &NewCompletion {
+                            role: who,
+                            generation: *generation,
+                            status: *status,
+                            summary: "stopped".to_owned(),
+                            final_message: None,
+                            final_source: FinalSource::None,
+                        },
+                    )?;
+                }
+            }
+            Ok(())
+        })
+        .unwrap();
+    rig
+}
+
+#[test]
+fn a_bare_close_refuses_a_blocked_or_failed_current_result_with_no_send_history() {
+    for status in [CompletionStatus::Blocked, CompletionStatus::Failed] {
+        let mut rig = team_of(&[("short", 3, Some(status))]);
+        let said = format!("short's current result is {status} (generation 3)");
+        let plan = plan_close_with(&rig.ctx(), CloseTarget::Team, &CloseOpts::default());
+        assert!(plan.refusals.iter().any(|r| r.contains(&said)), "{plan:?}");
+        assert!(
+            plan.refusals
+                .iter()
+                .any(|r| r.contains(&format!("--expect short:3:{status}"))),
+            "{plan:?}"
+        );
+        let report = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
+        assert!(report.steps.is_empty(), "{report:?}");
+        assert!(
+            report.refusals.iter().any(|r| r.contains(&said)),
+            "{report:?}"
+        );
+        untouched(&rig);
+    }
+}
+
+#[test]
+fn a_current_generation_with_no_result_after_an_older_one_refuses() {
+    let mut rig = team_of(&[("short", 3, Some(CompletionStatus::Done))]);
+    let now = rig.clock.now();
+    rig.store
+        .write(|tx| tx.bump_generation(now, &role("short"), "m002").map(|_| ()))
+        .unwrap();
     let report = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
+    assert!(
+        report.refusals.iter().any(|r| r.contains(
+            "short is in generation 4 with no result yet (its newest is generation 3, done)"
+        )),
+        "{report:?}"
+    );
+    untouched(&rig);
+    // Its old result does not stand in for the new generation.
+    let report = close(&mut rig.ctx(), CloseTarget::Team, expecting("short:3:done"));
+    assert!(
+        report
+            .refusals
+            .iter()
+            .any(|r| r.contains("short is in generation 4, not 3")),
+        "{report:?}"
+    );
+    untouched(&rig);
+}
+
+#[test]
+fn an_expectation_about_another_member_does_not_accept_a_blocked_one() {
+    let mut rig = team_of(&[
+        ("short", 3, Some(CompletionStatus::Blocked)),
+        ("web", 1, Some(CompletionStatus::Done)),
+        ("quiet", 1, None),
+    ]);
+    let opts = expecting("web:1:done");
+    let plan = plan_close_with(&rig.ctx(), CloseTarget::Team, &opts);
+    assert!(
+        plan.refusals
+            .iter()
+            .any(|r| r.contains("short's current result is blocked")),
+        "{plan:?}"
+    );
+    // Only short is named: web is done and quiet never reported.
+    assert_eq!(plan.refusals.len(), 1, "{plan:?}");
+    let report = close(&mut rig.ctx(), CloseTarget::Team, opts);
+    assert!(report.steps.is_empty(), "{report:?}");
+    untouched(&rig);
+
+    let report = close(
+        &mut rig.ctx(),
+        CloseTarget::Team,
+        expecting("short:3:blocked"),
+    );
     assert_eq!(report.stopped_at, None, "{report:?}");
     assert!(report.refusals.is_empty(), "{report:?}");
 }
 
 #[test]
-fn an_ordinary_close_with_no_refused_send_is_unchanged_even_with_a_blocked_result() {
-    // Closing a team whose member is blocked, on purpose, stays allowed.
-    let mut rig = Rig::new();
-    rig.add_pane_member("short", MemberKind::Investigator);
-    let now = rig.clock.now();
-    rig.store
-        .write(|tx| {
-            result_in(tx, now, 3, CompletionStatus::Blocked);
-            Ok(())
-        })
-        .unwrap();
+fn a_close_whose_members_finished_done_or_never_reported_runs_as_before() {
+    let mut rig = team_of(&[("web", 2, Some(CompletionStatus::Done)), ("quiet", 1, None)]);
     let report = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
     assert_eq!(report.stopped_at, None, "{report:?}");
     assert!(report.refusals.is_empty(), "{report:?}");
@@ -313,4 +425,43 @@ fn a_result_that_changes_before_the_lock_stops_the_close_with_nothing_removed() 
     );
     // The lock was given back and nothing was taken away.
     untouched(&rig);
+}
+
+#[test]
+fn a_refused_send_is_answered_only_by_an_expectation_for_each_member_it_was_meant_for() {
+    let mut rig = team_of(&[
+        ("short", 2, Some(CompletionStatus::Done)),
+        ("web", 1, Some(CompletionStatus::Done)),
+    ]);
+    let now = rig.clock.now();
+    rig.store
+        .write(|tx| {
+            tx.record_event(
+                now,
+                EventType::MessageRefused,
+                None,
+                None,
+                &json!({"code": "unknown_recipient", "type": "reprompt", "sender": "lead",
+                        "to": ["members"]}),
+            )
+        })
+        .unwrap();
+    // `members` names no member, so the send was meant for any of them.
+    let one = plan_close_with(&rig.ctx(), CloseTarget::Team, &expecting("web:1:done"));
+    assert!(
+        one.refusals
+            .iter()
+            .any(|r| r.contains("newest send was refused")),
+        "{one:?}"
+    );
+    let both = CloseOpts {
+        expect: vec![
+            Expected::parse("web:1:done").unwrap(),
+            Expected::parse("short:2:done").unwrap(),
+        ],
+        ..CloseOpts::default()
+    };
+    let report = close(&mut rig.ctx(), CloseTarget::Team, both);
+    assert_eq!(report.stopped_at, None, "{report:?}");
+    assert!(report.refusals.is_empty(), "{report:?}");
 }

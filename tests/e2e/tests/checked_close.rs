@@ -116,3 +116,59 @@ fn a_bare_close_after_a_refused_reprompt_refuses_and_a_checked_close_decides() {
     );
     assert!(!w.team_dir("demo").exists());
 }
+
+/// No send at all, as when a client checks a call itself and never reaches
+/// teamwire: the store holds no refusal, and a bare close still refuses the
+/// blocked member. An expectation about the finished member does not
+/// accept the blocked one.
+#[test]
+fn with_no_send_history_a_blocked_member_needs_its_own_expectation() {
+    let step = format!(
+        "{}if [ \"$TEAMWIRE_ROLE\" = short ]; then\nteamwire done --status blocked --summary \"no key\"\nelse\n{}fi\n",
+        sh::report(false),
+        sh::done("web finished")
+    );
+    let w = World::new(&ClaudeScript {
+        turns: vec![vec![Step::Run(step)]],
+        ..ClaudeScript::default()
+    });
+    let spec = json!({"team": "demo", "title": "Demo", "children": [
+        {"role": "short", "title": "Short", "kind": "investigator", "mode": "pane",
+         "cwd": w.repo(), "task": "look at it"},
+        {"role": "web", "title": "Web", "kind": "investigator", "mode": "pane",
+         "cwd": w.repo(), "task": "look at web"}]});
+    let launch = w.launch(&spec, &[]);
+    assert_eq!(launch.code, 0, "{}", launch.all());
+    w.wait_lead_screen(
+        "[teamwire:demo] short finished (blocked)",
+        Duration::from_secs(30),
+    );
+    w.wait_lead_screen(
+        "[teamwire:demo] web finished (done)",
+        Duration::from_secs(30),
+    );
+
+    for args in [
+        &["close", "demo"][..],
+        &["close", "demo", "--dry-run"][..],
+        &["close", "demo", "--expect", "web:1:done"][..],
+    ] {
+        let run = w.teamwire(args, None);
+        assert_eq!(run.code, 1, "{args:?}: {}", run.all());
+        assert!(
+            run.err
+                .contains("short's current result is blocked (generation 1)"),
+            "{args:?}: {}",
+            run.all()
+        );
+        assert!(
+            !run.err.contains("newest send was refused"),
+            "{}",
+            run.all()
+        );
+        assert!(!w.home.path().join("archive").exists());
+    }
+    let run = w.teamwire(&["close", "demo", "--expect", "short:1:blocked"], None);
+    assert_eq!(run.code, 0, "{}", run.all());
+    assert!(!w.team_dir("demo").exists());
+}

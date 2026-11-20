@@ -6,12 +6,16 @@
 //! status. The check reads only the member's own recorded results: a verify
 //! that passed or a check that was SKIPPED proves nothing about them.
 //!
-//! An ordinary close also refuses, in one case: the lead's newest send was
-//! refused and it stored no message after it. A refused reprompt starts no
-//! generation, so the team that close would archive is not the one the
-//! lead tried to make. `--expect` checks the outcome instead, and
+//! An ordinary close also refuses while a started member's current outcome
+//! is one the lead must decide about: a `blocked` or `failed` result in its
+//! current generation, or a current generation with no result after an
+//! older one had one. A refused reprompt starts no generation, and a send
+//! the client never made leaves no trace at all, so this reads the
+//! outcomes, not the send history. An `--expect` naming that member
+//! accepts its outcome; an expectation about another member does not.
 //! `--abandon <why>` closes the team as it is, on purpose, with the reason
-//! recorded. Every other ordinary close runs as before.
+//! recorded. A close whose members all finished `done`, or never reported,
+//! runs as before. The lead's refused newest send is still named too.
 
 use std::fmt;
 
@@ -62,24 +66,85 @@ impl fmt::Display for Expected {
     }
 }
 
-/// The refusals of the outcome checks for a whole-team close with `opts`:
-/// the unmet expectations when `--expect` is given; with neither `--expect`
-/// nor `--abandon`, the refused newest send. A store that cannot be read
-/// refuses, naming the error, since a check that did not run proves nothing.
+/// The refusals of the outcome checks for a whole-team close with `opts`,
+/// the same in the plan, the dry run and the re-check under the lock:
+///
+/// - each `--expect` that does not hold;
+/// - without `--abandon`, each started member whose current outcome a
+///   close must not archive unread: its result in its current generation
+///   is `blocked` or `failed`, or its current generation has no result
+///   while an older one has. Only an `--expect` naming that member
+///   acknowledges it; an expectation about another member does not;
+/// - without `--abandon`, a refused newest send by the lead, unless an
+///   `--expect` names each member it was meant for.
+///
+/// A store that cannot be read refuses, naming the error, since a check
+/// that did not run proves nothing.
 pub(crate) fn outcome_refusals(
     ctx: &Ctx<'_>,
     team: &teamwire_store::TeamRow,
     members: &[Member],
     opts: &crate::CloseOpts,
 ) -> Vec<String> {
-    let found = if !opts.expect.is_empty() {
-        unmet(ctx, members, &opts.expect)
-    } else if opts.abandon.is_none() {
-        refused_send(ctx, &team.name).map(|r| r.into_iter().collect())
-    } else {
-        Ok(Vec::new())
-    };
+    let found = (|| -> Result<Vec<String>, StoreError> {
+        let mut out = unmet(ctx, members, &opts.expect)?;
+        if opts.abandon.is_none() {
+            out.extend(unacknowledged(ctx, &team.name, members, &opts.expect)?);
+            out.extend(refused_send(ctx, &team.name, members, &opts.expect)?);
+        }
+        Ok(out)
+    })();
     found.unwrap_or_else(|e| vec![format!("the outcome check could not read the store: {e}")])
+}
+
+/// The members a close would archive mid-story: started, with a current
+/// result of `blocked` or `failed`, or with no result in a current
+/// generation that follows one with a result. A member with no result at
+/// all is not named: nothing of its story is in a result yet, and closing
+/// such a team stays as it was.
+fn unacknowledged(
+    ctx: &Ctx<'_>,
+    team: &TeamName,
+    members: &[Member],
+    expected: &[Expected],
+) -> Result<Vec<String>, StoreError> {
+    let mut out = Vec::new();
+    for m in members.iter().filter(|m| m.state == MemberState::Started) {
+        if expected.iter().any(|e| e.role == m.role) {
+            continue;
+        }
+        let Some(newest) = ctx.store.read(|tx| tx.latest_completion(&m.role))? else {
+            continue;
+        };
+        let c = &newest.completion;
+        let role = &m.role;
+        if c.generation == m.generation {
+            if matches!(
+                c.status,
+                CompletionStatus::Blocked | CompletionStatus::Failed
+            ) {
+                out.push(format!(
+                    "{role}'s current result is {status} (generation {g}): a close would archive \
+                     it as the team's outcome. If that is what you mean, close with --expect \
+                     {role}:{g}:{status}; to close the team as it is, use --abandon \"<why>\"; \
+                     otherwise check `teamwire status {team}` and finish the work first",
+                    status = c.status,
+                    g = c.generation,
+                ));
+            }
+        } else {
+            out.push(format!(
+                "{role} is in generation {now} with no result yet (its newest is generation \
+                 {old}, {status}): a close would archive the older result as if it answered the \
+                 newer work. Wait for its result and close with --expect {role}:{now}:<status>, \
+                 or use --abandon \"<why>\"",
+                now = m.generation,
+                old = c.generation,
+                status = c.status,
+            ));
+        }
+    }
+    Ok(out)
 }
 
 /// Why each expectation does not hold now; empty when all hold.
@@ -126,10 +191,18 @@ pub(crate) fn unmet(
     Ok(out)
 }
 
-/// The refusal of an ordinary close whose lead's newest send was refused,
-/// with nothing the lead stored after it. `None` when the lead's newest
-/// send was stored, or the lead never had one refused.
-pub(crate) fn refused_send(ctx: &Ctx<'_>, team: &TeamName) -> Result<Option<String>, StoreError> {
+/// The refusal of a close whose lead's newest send was refused, with
+/// nothing the lead stored after it. `None` when the lead's newest send was
+/// stored, when the lead never had one refused, or when an expectation
+/// names each member the send was meant for. A send that never reached
+/// teamwire leaves no row, so this check alone is not enough: the current
+/// outcomes are checked whatever the send history holds.
+pub(crate) fn refused_send(
+    ctx: &Ctx<'_>,
+    team: &TeamName,
+    members: &[Member],
+    expected: &[Expected],
+) -> Result<Option<String>, StoreError> {
     let by_lead = |e: &teamwire_core::Event, key: &str| {
         e.data.get(key).and_then(Value::as_str) == Some("lead")
     };
@@ -164,6 +237,26 @@ pub(crate) fn refused_send(ctx: &Ctx<'_>, team: &TeamName) -> Result<Option<Stri
         .and_then(Value::as_array)
         .map(|a| a.iter().filter_map(Value::as_str).collect())
         .unwrap_or_default();
+    // The members the send was meant for: those it named, or every started
+    // member when it named none of them (`members`, `lead`, nothing). Each
+    // needs an expectation before the refusal is answered.
+    let started: Vec<&Member> = members
+        .iter()
+        .filter(|m| m.state == MemberState::Started)
+        .collect();
+    let named: Vec<&Member> = started
+        .iter()
+        .copied()
+        .filter(|m| to.contains(&m.role.as_str()))
+        .collect();
+    let meant = if named.is_empty() { started } else { named };
+    if !meant.is_empty()
+        && meant
+            .iter()
+            .all(|m| expected.iter().any(|e| e.role == m.role))
+    {
+        return Ok(None);
+    }
     let to = if to.is_empty() {
         "no recipient".to_owned()
     } else {
