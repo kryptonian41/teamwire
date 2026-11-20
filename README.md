@@ -237,9 +237,12 @@ The specs also live in [examples/presets/](examples/presets/).
 | `parallel-tickets` | Several tickets touch different modules. No integration needed. |
 | `dependent-tickets` | Tickets block each other. Members start in waves, and the integrator merges blockers first. |
 | `survey` | You need a read-only investigation across several areas. |
-| `implement-then-review` | One implementer builds, then one fresh reviewer reads the finished diff. |
+| `implement-then-review` | One implementer builds, then one review round reads the finished diff: one fresh reviewer, or one reviewer set. |
 | `contract-split` | One feature must be split across implementers. Use it only as a last resort. |
 | `speckit` | One feature built with GitHub's spec-kit commands. A spec member writes the spec, the plan and the task list, a plan reviewer runs `analyze`, and one implementer runs `implement`. |
+| `plan-review` | A wrong plan would waste more than one implementer's work. One fresh agent reads the plan and every brief before any implementer starts. It is a first step, not a shape. |
+| `plan-review-set` | The same first step, read by two or three plan reviewers on different model families, then one reconciler that joins their reports. A set is opt-in. |
+| `review-set` | The review round, read by two or three reviewers on different model families, then one reconciler that writes one report with a section per owner. A set is opt-in. |
 | `integrator` | A finished team's branches must join into one. One implementer merges them in the plan's order and runs the full gate. It is a final step, not a shape. |
 | `closer` | A finished team that wrote code needs one agent to check every claim and write one report. It is a final step, not a shape. |
 

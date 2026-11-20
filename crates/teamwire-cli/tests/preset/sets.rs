@@ -221,3 +221,35 @@ fn the_afk_skill_keeps_a_set_off_unless_the_task_asks() {
         assert!(afk.contains(phrase), "the AFK skill lacks: {phrase}");
     }
 }
+
+/// Every place that counts the presets says six shapes and five steps, and
+/// the README's table names every preset.
+#[test]
+fn every_count_of_the_presets_says_six_shapes_and_five_steps() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let read = |path: &str| flat(&std::fs::read_to_string(root.join(path)).unwrap());
+    for path in [
+        "examples/README.md",
+        "docs/requirements.md",
+        "docs/conventions.md",
+        "docs/api/cli.md",
+    ] {
+        let text = read(path);
+        assert!(
+            text.contains("six team shapes and the five steps")
+                || text.contains("six team shapes and five steps"),
+            "{path} does not count five steps"
+        );
+        assert!(
+            !text.contains("three steps"),
+            "{path} still counts three steps"
+        );
+    }
+    let readme = read("README.md");
+    for name in super::NAMES {
+        assert!(
+            readme.contains(&format!("| `{name}` |")),
+            "README.md does not list {name}"
+        );
+    }
+}
