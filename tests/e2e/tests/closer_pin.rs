@@ -124,6 +124,30 @@ fn the_pin_refuses_a_same_named_branch_at_the_base_and_accepts_the_verified_sha(
         run.all()
     );
     assert!(passes(&clone, "test -f writer.txt"));
+    // A folder inside the right clone is not the clone: git would read the
+    // clone's HEAD there, but checks run in it see none of its files.
+    let child = clone.join("empty-child");
+    std::fs::create_dir_all(&child).unwrap();
+    let child_arg = child.display().to_string();
+    let run = w.teamwire(
+        &[
+            "verify",
+            "demo",
+            "--role",
+            "writer",
+            "--pinned-in",
+            &child_arg,
+        ],
+        None,
+    );
+    assert_eq!(run.code, 1, "{}", run.all());
+    assert!(
+        run.err.contains("is not the top of its own checkout"),
+        "{}",
+        run.all()
+    );
+    assert!(!passes(&child, "test -f writer.txt"));
+    std::fs::remove_dir(&child).unwrap();
 
     // A commit after the verify makes the record out of date.
     w.git(

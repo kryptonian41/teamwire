@@ -88,7 +88,8 @@ fn show_pin(pin: &Pin, team: &TeamName) -> ExitCode {
     }
     if pin.holds() {
         say(&format!(
-            "pinned: {} at {} (verify {}); the clone at {} is on that commit\n",
+            "pinned: {} at {} (verify {}); the clone at {} is on that commit. This proves the \
+             commit only: each check still needs its own run there\n",
             pin.role,
             short(&pin.expected),
             pin.verdict.as_deref().unwrap_or("unknown"),

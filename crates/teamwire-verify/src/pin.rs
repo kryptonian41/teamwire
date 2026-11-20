@@ -133,7 +133,9 @@ pub fn pin(ctx: &Ctx<'_>, role: &Role, clone: &Path) -> Result<Pin, VerifyError>
         ));
         return Ok(out);
     }
-    match Git::new(ctx.platform, clone).head() {
+    // Only the commit is proven here, never a file or a check: the closer
+    // still runs each check in the clone and reports its exit code.
+    match root_head(ctx, clone) {
         Ok(head) => {
             if head != expected {
                 out.problems.push(format!(
@@ -146,40 +148,54 @@ pub fn pin(ctx: &Ctx<'_>, role: &Role, clone: &Path) -> Result<Pin, VerifyError>
             }
             out.clone_head = Some(head);
         }
-        Err(e) => out
-            .problems
-            .push(format!("the clone's HEAD cannot be read: {e}")),
+        Err(why) => out.problems.push(format!(
+            "the clone cannot be pinned: {why}; name the clone's own root folder"
+        )),
     }
     Ok(out)
 }
 
 /// The commit the member's checkout is on now. A worktree member's folder
-/// must be the top of its own checkout: an empty folder inside the
-/// repository would otherwise give the repository's HEAD, which is not the
-/// member's. Every failure is returned with its reason, never taken for a
-/// match.
+/// must be the root of its own checkout (`root_head`). A pane member works
+/// in a folder of a repository, so its HEAD is read where it works. Every
+/// failure is returned with its reason, never taken for a match.
 fn current_head(ctx: &Ctx<'_>, member: &teamwire_core::Member) -> Result<String, String> {
     let cwd = &member.cwd;
     if !cwd.is_dir() {
         return Err(format!("its checkout {} does not exist", cwd.display()));
     }
-    let git = Git::new(ctx.platform, cwd);
     if member.mode == teamwire_core::Mode::Worktree {
-        let top = git
-            .stdout(&["rev-parse", "--show-toplevel"])
-            .map_err(|e| format!("{} is not a git checkout ({e})", cwd.display()))?;
-        let same = std::fs::canonicalize(top.trim())
-            .ok()
-            .zip(std::fs::canonicalize(cwd).ok())
-            .is_some_and(|(a, b)| a == b);
-        if !same {
-            return Err(format!(
-                "{} is not the top of its own checkout (git reads {} there)",
-                cwd.display(),
-                top.trim()
-            ));
-        }
+        return root_head(ctx, cwd);
+    }
+    Git::new(ctx.platform, cwd)
+        .head()
+        .map_err(|e| format!("the HEAD of {} cannot be read ({e})", cwd.display()))
+}
+
+/// The HEAD of the checkout whose root is `dir`. The member's worktree and
+/// the closer's clone are both read this way. A folder inside a checkout is
+/// refused: git would read the outer checkout's HEAD there, and checks run
+/// in that folder would see none of its files. Paths are compared after
+/// resolving links, so two names of one folder match.
+fn root_head(ctx: &Ctx<'_>, dir: &Path) -> Result<String, String> {
+    if !dir.is_dir() {
+        return Err(format!("{} does not exist", dir.display()));
+    }
+    let git = Git::new(ctx.platform, dir);
+    let top = git
+        .stdout(&["rev-parse", "--show-toplevel"])
+        .map_err(|e| format!("{} is not a git checkout ({e})", dir.display()))?;
+    let same = std::fs::canonicalize(top.trim())
+        .ok()
+        .zip(std::fs::canonicalize(dir).ok())
+        .is_some_and(|(a, b)| a == b);
+    if !same {
+        return Err(format!(
+            "{} is not the top of its own checkout (git reads {} there)",
+            dir.display(),
+            top.trim()
+        ));
     }
     git.head()
-        .map_err(|e| format!("the HEAD of {} cannot be read ({e})", cwd.display()))
+        .map_err(|e| format!("the HEAD of {} cannot be read ({e})", dir.display()))
 }
