@@ -214,9 +214,6 @@ pub(crate) struct WatchArgs {
     /// Run one poll and exit.
     #[arg(long)]
     pub(crate) once: bool,
-    /// Also type each line into the lead's pane (ADR 0054, decision 8).
-    #[arg(long)]
-    pub(crate) deliver: bool,
 }
 
 #[derive(Args)]
@@ -490,9 +487,6 @@ pub(crate) struct PrWatchArgs {
     /// Seconds between polls.
     #[arg(short = 'i', long = "interval", value_name = "SECONDS")]
     pub(crate) interval: Option<u64>,
-    /// Also type each line into this team's lead pane (ADR 0039).
-    #[arg(long, value_name = "TEAM")]
-    pub(crate) deliver: Option<String>,
     #[arg(value_name = "PR", required = true)]
     pub(crate) prs: Vec<u64>,
 }

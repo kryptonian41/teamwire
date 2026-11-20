@@ -124,12 +124,23 @@ names, or by default the crates with files that differ from the base
 (`$TEAMWIRE_BASE`, else `main`, else `origin/main`; committed, staged,
 unstaged and untracked), it tests those crates and every workspace crate that
 depends on them, dev-dependencies included. It prints the base it used. With
-none of the three refs it exits 1 and names `TEAMWIRE_BASE`. A change under
-`examples/` also tests `teamwire-cli` and `teamwire-harness-claude`, which
-embed the presets and the skill files.
+none of the three refs it exits 1 and names `TEAMWIRE_BASE`. `--file PATH`,
+which may repeat, names the changed files instead of asking git. A changed
+file also tests each crate that reads it from outside the crate's folder. A
+crate reads a path when one of its `.rs` files holds a string literal that
+starts with `../` (or `/../`, as after `env!("CARGO_MANIFEST_DIR")`, or
+`{}/../`, as in a format string given that folder), and that
+literal, resolved against the file's folder or against the crate's folder,
+names a file or folder outside the crate's folder that exists or is itself a
+changed file. A changed file inside such a folder counts too. A rename counts
+under its old and its new name, so a deleted or renamed file still tests the
+crate that names it. The script works this out from the code on
+each run, so it keeps no list of crates by hand. It cannot see a path that
+code builds in pieces, such as `join("examples").join("presets")`. A changed
+file that no crate holds or reads, such as `docs/api/cli.md`, tests nothing.
 The script never reads standard input. The end-to-end and
 crash test crates count as dependents. It builds the tests, the fakes and the
-CLI binary in one command, then runs `cargo test --locked -p ...` with
+CLI binary in one command, then runs `cargo nextest run --locked -p ...` with
 `TEAMWIRE_FAKES_PREBUILT=1`. `--dry-run` prints the package list and the
 commands without building. The full gate still runs at the end of each wave.
 

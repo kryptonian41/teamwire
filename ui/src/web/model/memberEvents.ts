@@ -88,7 +88,12 @@ export interface Handoff {
   /** The generation the member has after the handoff. */
   generation: number | null;
   oldSession: string | null;
-  /** Null when the harness picks its own id. */
+  /**
+   * Null only in a handoff event that v0.28.1 or an older build wrote, for a
+   * member whose harness picked its own session id (Codex) and had not yet
+   * reported it. teamwire now chooses every session id, but the store keeps
+   * those old events, so the type still allows null.
+   */
   newSession: string | null;
 }
 

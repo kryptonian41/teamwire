@@ -171,7 +171,7 @@ for a failure after the team exists). The same exit 6 follows when the hold is
 not recorded after the team exists: `the sleep hold could not be taken:
 <warnings>; close the team with teamwire close <team> and start again`.
 
-### `teamwire watch <team> [--interval SECONDS] [--once] [--deliver]`
+### `teamwire watch <team> [--interval SECONDS] [--once]`
 
 Runs until the team completes or closes. Prints at most one line per poll,
 events joined by ` | `, each starting `[teamwire:<team> HH:MM:SSZ]` (WAT-1).
@@ -187,14 +187,12 @@ printed. Default interval 20 s, at most 300 s (half the 600 s after which a
 watch lease looks dead); a larger interval, or 0, exits 3. `--once` runs one
 poll and exits (for tests and scripts).
 Refuses to start when another live watch holds the team's lease, and names
-its pid. `--deliver` also types each printed line, with the same dated
-prefix, into the lead's place. Each delivery ends
-within 15 s. A line that cannot be delivered is still printed, and the watch
-keeps polling. A pi lead calls the
+its pid. The watch only prints, and it types nothing into any session. No
+flag makes it type into the lead's pane (ADR 0055). A Claude Code lead
+reads the watch's lines through its Monitor tool. A pi lead calls the
 `teamwire_watch` tool of teamwire's lead package instead, which runs the watch
 and steers each line into the session (ADR 0036); the package refuses
-`teamwire watch` through bash. `teamwire pr-watch --deliver` types its lines
-through the same delivery.
+`teamwire watch` through bash.
 
 Events, each announced once per occurrence:
 
@@ -1064,7 +1062,7 @@ event prints `team <team>: no handoff to this session is recorded`. With
 nothing listed, one line says nothing was missed. A store that cannot be read
 exits 6.
 
-### `teamwire pr-watch [--deliver TEAM] -R OWNER/REPO [-i SECONDS] PR...`
+### `teamwire pr-watch -R OWNER/REPO [-i SECONDS] PR...`
 
 EXT-1. One line per poll at most: a check's first failure, a mergeability
 change (a first `CONFLICTING`, `BLOCKED` or `DRAFT` merge state is said once),
@@ -1090,15 +1088,11 @@ CLOSED` once and counts the PR done. A check failure already announced for it
 still counts, so the command exits 1 in that case. A PR with no checks is done only after three polls in a row
 find none, because GitHub has no check runs for a few seconds after a push.
 
-`--deliver TEAM` (ADR 0039) puts `[teamwire:<team>] ` before each line,
-prints it, and types it into that team's lead pane through the delivery of
-`watch --deliver`:
-`[teamwire:alpha] o/r#7 MERGED`. Each delivery ends within 15 s; a line that
-cannot be delivered is still printed, and the watch goes on. A member session is refused (`refused.identity`,
-exit 1), and a team with no database exits 1. Without `--deliver` the lines
-carry no prefix and nothing is typed. A pi lead calls the `teamwire_pr_watch`
+The command opens no team and only prints. Its lines carry no prefix, and it
+types nothing into any session. No flag makes it type into a lead's pane
+(ADR 0055). A pi lead calls the `teamwire_pr_watch`
 tool of teamwire's lead package instead, with `repo`, `prs` and an optional
-`interval`: it runs `teamwire pr-watch` without `--deliver` and steers each
+`interval`: it runs `teamwire pr-watch` and steers each
 line into the session, as `teamwire_watch` does. The package refuses
 `teamwire pr-watch` through bash.
 
