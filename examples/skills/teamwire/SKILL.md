@@ -71,9 +71,9 @@ later ones for you, and `TEAM-COMPLETE` only means the current members
 stopped.
 
 1. Plan, run the planning check, and settle the questions with the user.
-2. Plan reviewer, when a wrong plan would waste more than one implementer's work.
+2. Plan reviewer, or a plan-reviewer set the user chose, when a wrong plan would waste more than one implementer's work.
 3. Launch, then start the watch.
-4. Waves, each through the planning check, until the last planned member reports.
+4. Waves, each through the planning check, until the last planned member reports. One review round reads each finished diff: one reviewer, or a reviewer set the user chose.
 5. Integrator, when branches join (`teamwire preset integrator`).
 6. Closer, always once code exists (`teamwire preset closer`), with a new watch.
 7. Triage the closer's findings, at most two fix rounds per owner, then `teamwire verify`.
@@ -250,7 +250,10 @@ place it has to guess is a place an implementer would guess too.
   `teamwire preset plan-review`, whose rules say what its task holds and how
   to read its report. Fix the briefs from its report. Then add the
   implementers with `teamwire launch --add`. Launch has no rule that orders
-  the two steps, so the order is yours to keep.
+  the two steps, so the order is yours to keep. When the user chose a
+  plan-reviewer set, the set takes the place of the plan reviewer, from
+  `teamwire preset plan-review-set`, and you fix the briefs from the
+  reconciler's report ("Sets: several model families on one judging job").
 - **Its findings.** Put each one in one of four groups:
   - **fix**: the finding holds, so edit the brief;
   - **contest**: the finding is wrong, and a file the reviewer could read
@@ -258,16 +261,21 @@ place it has to guess is a place an implementer would guess too.
   - **ask the user**: the finding is wrong, but the evidence is outside every
     file the reviewer could read, such as something the user said;
   - **decline**: the finding is a nit, so record it.
-- **Once per plan.** Fix the briefs once from the report, then add the
-  implementers. Never review the same plan twice. A reviewer asked again
-  finds something new each time, and the fixes grow without end.
+- **Once per plan.** One review round reads each plan: one plan reviewer, or
+  one plan-reviewer set. Fix the briefs once from the report, then add the
+  implementers. Never review the same plan twice, with one reviewer or with
+  a set. A reviewer asked again finds something new each time, and the
+  fixes grow without end.
 
 **Settle the open questions.** When the user is present, ask every question
 you would otherwise answer yourself, each with your recommended answer. Show
 one numbered entry per member: kind, task, blockers, owned files and wave.
 Ask about unclear acceptance criteria, a blocking edge that looks missing or
 spurious, each policy rule's example, and anything you would have to invent
-for a brief. Use the `grilling` skill if you have it. Launch once every
+for a brief. Ask whether the team uses a plan-reviewer set or a reviewer
+set, with your model picks and the estimated money, as the rules under
+"Sets: several model families on one judging job" say. A set is opt-in.
+Use the `grilling` skill if you have it. Launch once every
 question has an answer. With no user present, put each question in the
 affected brief under "Open questions you must not answer", and list them in
 your final report.
@@ -313,6 +321,13 @@ agreed plan, to list any choice the brief does not cover under **Decisions I
 made**, and to record a question the brief marks open without answering it.
 Implementers and investigators talk only through `teamwire send`. Reviewers,
 plan reviewers, reconcilers and closers send nothing.
+
+The `quiet` setting makes a member of any kind quiet: with `"quiet": true`
+in its spec, the member sends no message, and only its own lead may message
+it. Reviewers, plan reviewers, reconcilers and closers are quiet by their
+kind, so launch refuses `"quiet": false` on one of them. A planner in a
+later planner set is an `investigator` with `"quiet": true`, so no planner
+reads another planner's plan before it writes its own.
 
 A member's `kind` sets its role. Its `task_class` says how hard its task is
 to reason about. The two are separate: a review of a one-line rename and a
@@ -542,7 +557,8 @@ applies to Claude Code members. For a pi member, write the tdd and
 diagnosing-bugs sentences only when its harness has those skills, and check
 its harness for a memory feature that would carry one member's findings to
 another. Implementers keep the user's plugins. Give
-every Claude Code reviewer, plan reviewer, closer and investigator this map:
+every Claude Code reviewer, plan reviewer, reconciler, closer and
+investigator this map:
 
 ```json
 "plugins": {"ponytail@ponytail": false, "mattpocock-skills@claude-plugins-official": false, "claude-mem@thedotmack": false}
@@ -606,6 +622,13 @@ has a hyphen, and `lead` is reserved.
   removed. Later teams find this team's decisions by ref.
 - `context_handoff_tokens` sets the token count at which a member is told to
   hand off (see "When a member's context runs high").
+- `set` puts a member in a set of readers: members with the same label in
+  one team form one set, such as `"set": "revset"`. A label matches
+  `^[a-z][a-z0-9_]{0,15}$`. Launch stores the label, so a later `--add`
+  sees the set's earlier members, and prints a set warning for a set that
+  breaks a rule ("Launch warnings for a set" in `reference.md`).
+- `quiet`: `"quiet": true` makes a member of any kind send no message, as
+  "Roles" says.
 - `deadline_s` (default 1800) sets when `LATE` fires. `"dispatch": false`
   starts a member idle, for you to prompt. With `"accept_trust": false`,
   launch does not answer the folder-trust prompt, and it fails the member
@@ -889,8 +912,9 @@ let it decide a question itself.
 ### Messages
 
 Leads, implementers and investigators talk, within a team and across teams.
-Reviewers, plan reviewers, reconcilers and closers send nothing, and only their own lead
-may message them, so their look at the work stays fresh. teamwire enforces
+Reviewers, plan reviewers, reconcilers, closers and every member with
+`"quiet": true` send nothing, and only their own lead may message them, so
+their look at the work stays fresh. teamwire enforces
 every rule here.
 
 ```bash
@@ -1032,7 +1056,9 @@ Remove a member once it can no longer be useful, with
 | --- | --- |
 | investigator | Once the closer's findings on it are resolved. With no closer, once the members that may ask it questions have finished. |
 | implementer | Once `teamwire verify <team> --role <role>` passes and the closer's findings on it are resolved. |
-| reviewer, plan reviewer, reconciler, closer | Once you have read its report and acted on it. |
+| reviewer, plan reviewer, closer | Once you have read its report and acted on it. |
+| reader of a set | Once the set's reconciler has reported. Launch still counts a reader that reported before you removed it, and the reconciler reads its report by path. |
+| reconciler | Once you have read its report and sent each owner its section. |
 | any member going the wrong way | At once, with `--unverified --stop`, then replace it. |
 
 A finished implementer whose verify is `FLAGGED` gets a waiver per flag,
@@ -1129,7 +1155,8 @@ reads the document, runs `teamwire status` for each team and
 
 Start once the last planned member has reported. `TEAM-COMPLETE` after wave 1
 of a dependent set is not this point, and neither is an implementer finishing
-before its reviewer has run. You run none of the steps below yourself:
+before its review round has run. That round is one reviewer, or one reviewer
+set and its reconciler. You run none of the steps below yourself:
 members merge, build, test and push, and you judge what they report.
 
 1. **Add the integrator when branches join.** Parallel tickets each become
@@ -1192,9 +1219,9 @@ members merge, build, test and push, and you judge what they report.
    own branch, and answers with evidence where it does not. Even a one-line
    fix goes to its owner. Confirm each fix with
    `teamwire verify <team> --role <owner>`, then reprompt the integrator to
-   merge the new commits and run the full gate again. Allow one fresh review,
-   then at most two fix rounds by the owner, and never a second review of the
-   same diff. The round on pull request comments in step 6 comes once more
+   merge the new commits and run the full gate again. Allow one review
+   round, by one fresh reviewer or one reviewer set, then at most two fix
+   rounds by the owner, and never a second review round on the same diff. The round on pull request comments in step 6 comes once more
    on top of these, and only for bot and CI comments. Do not run the closer again, and do not hand the corrections to a
    fork of yourself. A fix round is the normal case, not a failure: about
    half of the reviewed implementers in teamwire's own runs got one. Tell the
@@ -1249,7 +1276,16 @@ you are not. `TEAM-COMPLETE` alone is not that signal. Closing after wave 1
 would archive the team before wave 2 could join it.
 
 Read each member's token use with `teamwire metrics <team>` before you
-close ("Other commands" in `reference.md` lists its labels).
+close ("Other commands" in `reference.md` lists its labels). A member whose
+harness records money, which today means pi, also gets one money line per
+model, in dollars to 4 places:
+
+```
+teamwire.member.cost{team=myteam,role=revb,kind=reviewer,model=<provider>/<model>,effort=high,task_class=judgement} 1.5878 usd
+```
+
+A Claude Code member gets no money line, so read a missing line as not
+recorded, never as zero.
 
 ```bash
 teamwire close <team> --dry-run    # print the plan
@@ -1298,6 +1334,7 @@ teams. "Close" in `reference.md` lists each step.
 ## Reference
 
 `reference.md`, next to this file, holds "Setting up a machine", "How it fits
-together", "Watch lines", "Messages", "Reopen", "Context handoff", "Lead
-handoff", "Verify flags", "Pull request lines", "Close" and "Other commands".
+together", "Watch lines", "Launch warnings for a set", "Messages", "Reopen",
+"Context handoff", "Lead handoff", "Verify flags", "Pull request lines",
+"Close" and "Other commands".
 Its first lines say when to read each.

@@ -91,3 +91,133 @@ fn the_set_example_names_no_real_model() {
         assert!(!lower.contains(name), "the set section names {name}");
     }
 }
+
+/// Each rule that allowed one reviewer, one review or no second review keeps
+/// its meaning and gains the set: one review round, which may be one reader
+/// or one set, and never a second round. Each place a single reader runs
+/// says where a set takes its place.
+#[test]
+fn the_rules_of_one_review_round_gain_the_set() {
+    let skill = flat(&example("skills/teamwire/SKILL.md"));
+    for phrase in [
+        // The shapes table.
+        "one review round reads the finished diff: one fresh reviewer, or one reviewer set.",
+        "Never a second review round on the same diff.",
+        // "The run in order".
+        "2. Plan reviewer, or a plan-reviewer set the user chose,",
+        "One review round reads each finished diff: one reviewer, or a reviewer set the user chose.",
+        // "Have a fresh member read the plan", "Once per plan".
+        "the set takes the place of the plan reviewer, from `teamwire preset plan-review-set`",
+        "One review round reads each plan: one plan reviewer, or one plan-reviewer set.",
+        "Never review the same plan twice, with one reviewer or with a set.",
+        // "Settle the open questions".
+        "Ask whether the team uses a plan-reviewer set or a reviewer set",
+        // "After the last wave", the start and step 3.
+        "That round is one reviewer, or one reviewer set and its reconciler.",
+        "Allow one review round, by one fresh reviewer or one reviewer set, then at most \
+         two fix rounds by the owner, and never a second review round on the same diff.",
+    ] {
+        assert!(skill.contains(phrase), "the skill lacks: {phrase}");
+    }
+    for gone in [
+        "one fresh reviewer reads the finished diff, then",
+        "Allow one fresh review, then",
+    ] {
+        assert!(!skill.contains(gone), "the skill still says: {gone}");
+    }
+}
+
+/// The spec fields and the roles name `set` and `quiet`. The setting is
+/// `quiet`, never `silent`: the watch already prints `SILENT <role>` for a
+/// member that stopped answering.
+#[test]
+fn the_skill_describes_set_and_quiet() {
+    let raw = example("skills/teamwire/SKILL.md");
+    let skill = flat(&raw);
+    for phrase in [
+        "- `set` puts a member in a set of readers",
+        "- `quiet`: `\"quiet\": true` makes a member of any kind send no message",
+        "The `quiet` setting makes a member of any kind quiet",
+        "launch refuses `\"quiet\": false` on one of them.",
+        "A planner in a later planner set is an `investigator` with `\"quiet\": true`",
+        "Reviewers, plan reviewers, reconcilers, closers and every member with \
+         `\"quiet\": true` send nothing",
+        "every Claude Code reviewer, plan reviewer, reconciler, closer and investigator this map",
+        "| reader of a set | Once the set's reconciler has reported.",
+        "| reconciler | Once you have read its report and sent each owner its section. |",
+        "The `family` column names each model's family",
+    ] {
+        assert!(skill.contains(phrase), "the skill lacks: {phrase}");
+    }
+    // The watch line `SILENT` is upper case, so the setting's name is
+    // matched as written and the phrase in any case.
+    for setting in ["`silent`", "\"silent\""] {
+        assert!(!raw.contains(setting), "the skill names {setting}");
+    }
+    assert!(!raw.to_lowercase().contains("silent setting"));
+}
+
+/// The closing section and the reference show the money line, with a
+/// made-up role and the model as `<provider>/<model>`, since no file under
+/// `examples/` names a real model.
+#[test]
+fn the_skill_and_the_reference_show_the_money_line() {
+    let line = "teamwire.member.cost{team=myteam,role=revb,kind=reviewer,\
+                model=<provider>/<model>,effort=high,task_class=judgement} 1.5878 usd";
+    let skill = example("skills/teamwire/SKILL.md");
+    let reference = example("skills/teamwire/reference.md");
+    let (_, closing) = skill.split_once("## Closing a team down").unwrap();
+    assert!(closing.contains(line), "{closing}");
+    assert!(flat(&closing).contains("read a missing line as not recorded, never as zero"));
+    assert!(reference.contains(line));
+    assert!(reference.contains("The counter `teamwire.member.cost`, unit `usd`"));
+}
+
+/// The reference lists every set warning launch prints, as the interface
+/// doc names them, so a lead that meets one knows what to do.
+#[test]
+fn the_reference_lists_every_set_warning() {
+    let cli = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/api/cli.md"),
+    )
+    .unwrap();
+    let codes: Vec<&str> = cli
+        .lines()
+        .filter_map(|l| l.strip_prefix("| `set_"))
+        .filter_map(|rest| rest.split('`').next())
+        .collect();
+    assert_eq!(codes.len(), 8, "{codes:?}");
+    let reference = example("skills/teamwire/reference.md");
+    let (_, section) = reference
+        .split_once("## Launch warnings for a set")
+        .unwrap();
+    let (section, _) = section.split_once("\n## ").unwrap();
+    for code in codes {
+        assert!(
+            section.contains(&format!("| `set_{code}` |")),
+            "the reference lacks set_{code}"
+        );
+    }
+    assert!(
+        reference
+            .contains("- launch prints a `warning: set_` line: \"Launch warnings for a set\";")
+    );
+}
+
+/// An away-from-keyboard run uses a set only when the task text asks, and
+/// the seat table covers every member of a set.
+#[test]
+fn the_afk_skill_keeps_a_set_off_unless_the_task_asks() {
+    let afk = flat(&example("skills/afk/SKILL.md"));
+    for phrase in [
+        "A set of plan reviewers or of reviewers is off in an AFK run, unless the user's \
+         task text asks for one.",
+        "the plan reviewer or reviewer row covers each reader of the set, and the \
+         reconciler row covers the member that joins their reports.",
+        "| reconciler | reconciler, opus, xhigh |",
+        "write each pick, whether it has a measured result for its seat, and its \
+         estimated money into `afk/decisions.md`",
+    ] {
+        assert!(afk.contains(phrase), "the AFK skill lacks: {phrase}");
+    }
+}

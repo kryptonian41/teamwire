@@ -122,6 +122,20 @@ whole run.
 | closer | closer, opus, xhigh | Always, once code exists (section 2). | the integrated report and the exit codes |
 | reporter | investigator, opus, high | Always, at the end (section 7). | `afk/REPORT.md` |
 
+A set of plan reviewers or of reviewers is off in an AFK run, unless the
+user's task text asks for one. When it does, the plan reviewer or reviewer
+row covers each reader of the set, and the reconciler row covers the member
+that joins their reports. Pick each reader's model as "Sets: several model
+families on one judging job" in the teamwire skill says: one model per
+family, the newest top-tier model of each. The table's model is the Claude
+reader's. Every other reader runs on pi at the table's effort, or at the
+highest level its harness lists when that one is missing. Launch compares
+only Claude models with the table, so it prints no AFK warning for a GPT or
+Gemini reader. Nobody confirms the picks, so write each pick, whether it has
+a measured result for its seat, and its estimated money into
+`afk/decisions.md`, and list them in the report. A set reads once, as a
+single reader does.
+
 Use `max` only for one member whose task is hard to reason about, such as a
 race or a data-loss path. Set every `deadline_s` to 1.5 times what you would
 set otherwise. Write each brief to `afk/briefs/<role>.md` in the team
