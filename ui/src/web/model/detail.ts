@@ -177,7 +177,11 @@ export function buildDetail(role: string, src: DetailSource): Detail | null {
       files: has(memberFiles(files, role)),
       resume: has(true),
       actions: src.actions
-        ? { reprompt: canReprompt(live.kind, entry?.lifecycle ?? null), note: canMessage(live.kind), close: true }
+        ? {
+            reprompt: canReprompt(live.kind, entry?.lifecycle ?? null, entry?.quiet ?? false),
+            note: canMessage(live.kind, entry?.quiet ?? false),
+            close: true,
+          }
         : null,
     };
   }
