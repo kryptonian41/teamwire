@@ -195,8 +195,8 @@ nextest still reports the test as short, about 8 s.
 **How sure this is.** The failure was reproduced. A test run whose
 `dialog answer` process was frozen for 61 s failed on the same line with the
 same two values. A freeze of 50 s passed. The power log of the Mac (`pmset -g
-log`) showed a 300 s sleep inside the failed run, which nextest had timed at
-8.3 s. A second failure fits a 103 s sleep in the power log, but its output
+log`) showed a 300 s sleep inside the failed run. nextest had timed the test
+at 8.3 s and the whole run at 21.4 s. A second failure fits a 103 s sleep in the power log, but its output
 was lost.
 
 **Same exposure.** These tests of the same file also write a 60 s dialog by
@@ -207,7 +207,6 @@ refusal `expired` and no printed command, so a long sleep can fail them too:
 - `an_answer_to_a_dialog_that_changed_types_nothing_and_answers_nothing`
   (`dialog.rs:228`)
 - `a_member_cannot_answer_even_with_its_token_unset` (`dialog.rs:323`)
-- `an_unanswerable_call_is_refused` (`dialog.rs:371-384`)
 - `show_prints_the_command_and_types_nothing` (`dialog.rs:480`)
 - `show_escapes_control_and_invisible_characters_in_the_command`
   (`dialog.rs:551`)
@@ -240,7 +239,7 @@ The same kill shows up in an install test as a panic on the missing exit code
 
 1. The install tests give each test bed a hard link to the built binary,
    `target/debug/teamwire`, inside a temporary folder (`link_binary`,
-   `install.rs:37-47`, called from `Bed::binary` at `install.rs:90-95`).
+   `install.rs:37-47`, called from `Bed::binary` at `install.rs:90-96`).
 2. Each temporary folder is a `TestHome` (`tests/fakes/src/lib.rs:48`), so the
    folder and the link in it are deleted when the test ends.
 3. This test starts the same file by its main name (`launch.rs:64`).

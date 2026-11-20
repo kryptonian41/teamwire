@@ -226,7 +226,9 @@ else
   fi
   echo "test-changed: base: $base"
   base="$(git merge-base "$base" HEAD)" || exit 1
-  # --no-renames lists a rename as its old and its new name.
+  # --no-renames lists a rename as its old and its new name. Without it, git
+  # lists only the new name, so a crate that still reads the old name is not
+  # tested.
   tracked="$(git diff --name-only --no-renames "$base")" || exit 1
   untracked="$(git ls-files --others --exclude-standard)" || exit 1
   files="$tracked

@@ -86,8 +86,8 @@ user.
 
 - A script that starts either command with `--deliver` exits 3 at once. No
   such script exists in this repository or its examples.
-- A lead on v0.29.0 or an older build that started a background watch with
-  the flag keeps it running until that watch ends. The upgrade does not
+- A lead on a build that still has the flag, and that started a background
+  watch with it, keeps that watch running until it ends. The upgrade does not
   stop it.
 - `tidy --base` prints `WEAKENED` for the four deleted tests and the deleted
   half of a fifth in `crates/teamwire-cli/tests/watch.rs`. Each tested the
