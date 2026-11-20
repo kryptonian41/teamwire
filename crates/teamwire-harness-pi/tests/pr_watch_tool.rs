@@ -55,7 +55,8 @@ fn the_tool_takes_the_repo_the_pull_requests_and_an_optional_interval() {
 #[test]
 fn the_tool_runs_pr_watch_without_deliver_and_steers_its_lines_like_the_watch() {
     let text = extension().unwrap();
-    // pi reads each line itself; `--deliver` would type it into the pane too.
+    // pi reads each line itself. `pr-watch` refuses `--deliver` since ADR
+    // 0055, so a tool that passed it would never start the watch.
     assert!(
         text.contains(r#"["pr-watch", "-R", repo, ...every, ...prs]"#),
         "{text}"
