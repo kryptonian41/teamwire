@@ -255,10 +255,12 @@ places, tokens or session ids. The text names each member as
 - `quiet` says whether the member is quiet in effect (MSG-3): its kind is
   `reviewer`, `plan_reviewer`, `reconciler` or `closer`, or its spec set
   `"quiet": true` (ADR 0058). A reviewer shows `true`, so a reader never
-  needs to know which kinds are quiet. A roster from an older build has no
-  `quiet` key; read it as `false` and judge by the kind.
+  needs to know which kinds are quiet. The key comes with schema version 13
+  (PRM-10). A roster from an older build has no `quiet` key; read it as
+  `false` and judge by the kind.
 - `set` is the member's set label (ADR 0057), or `null` when its spec named
-  none. Members with the same label in one team form one set.
+  none. Members with the same label in one team form one set. Schema version
+  13 stores the label in the `set_label` column.
 
 ## `team_log`
 

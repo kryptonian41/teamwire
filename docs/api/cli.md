@@ -97,7 +97,8 @@ Spec fields, per team: `team`, `title`, `setup`, `harness` (default: the lead's 
 send no message, and only its own lead may message it. A reviewer, plan
 reviewer, reconciler and closer are quiet by their kind, so `"quiet": false`
 on one of them is refused. `"set": "rev1"` puts the member in the set `rev1`
-of its team (ADR 0057). Launch stores both with the member, so a later
+of its team (ADR 0057). Launch stores both with the member, in the `quiet`
+and `set_label` columns that schema version 13 adds (PRM-10), so a later
 `--add` reads the earlier members of a set. A member launched again after a
 failed start takes both from the new spec. `--dry-run` ends a member's line
 with `, quiet` when the spec sets `"quiet": true`, for any kind, and with
@@ -1350,8 +1351,8 @@ The roster, as `team_members` returns it (`docs/api/mcp.md`), of the
 caller's own team or any other. The text form prints each member's
 `lifecycle` and the types it accepts from other members. `--json` gives each
 member `quiet`, whether it is quiet in effect (its kind is quiet, or its
-spec set `quiet`), and `set`, its set label or `null`. JSON from an older
-build has neither key. Whether a member
+spec set `quiet`), and `set`, its set label or `null`. Both keys come with
+schema version 13 (PRM-10). JSON from an older build has neither key. Whether a member
 is working or done is in `teamwire status`.
 
 ### `teamwire teams [--json]`
