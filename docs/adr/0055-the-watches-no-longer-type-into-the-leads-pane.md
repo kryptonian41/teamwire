@@ -106,16 +106,29 @@ user.
 ## What still holds in ADR 0039
 
 ADR 0039 gave `pr-watch` both the flag and the pi tool. After this ADR,
-these parts of it still hold:
+these parts of it still hold. Where a line holds both a part that still holds
+and a part this ADR supersedes, the item names the part that holds, and the
+table below names the other part.
 
+- Line 1, the title's second clause: "a pi lead watches pull requests with a
+  tool".
+- Line 3: ADR 0039 supersedes no sentence of an earlier ADR.
+- Lines 6-7: ADR 0039 gives `pr-watch` "what ADR 0036 gave the watch in pi, a
+  tool whose lines are steered into the session".
 - Context, lines 23-26: a pi lead that runs `teamwire pr-watch` through bash
   holds its own turn.
 - Decision 4 (lines 58-69): the pi tool `teamwire_pr_watch`, which runs
   `teamwire pr-watch` without the flag and steers each line.
 - Decision 5 (lines 71-73): the pi package refuses `teamwire pr-watch`
   through bash.
-- Rejected, lines 83-88: the pi tool does not pass the flag, and pull
-  requests are not folded into `teamwire watch`.
+- Rejected, lines 83-84: the pi tool does not pass the flag, and "the
+  extension reads the child's output and steers it already". The rest of
+  that sentence, on lines 84-85, gives a reason that is now false, and the
+  table below supersedes it.
+- Rejected, lines 86-88: pull requests are not folded into `teamwire watch`.
+- Consequences, lines 92-94, the pi part: a pi lead hears about a failed
+  check, a merge state and `DONE` without holding its own turn. ADR 0054
+  already superseded the Codex part.
 - Consequences, lines 96-97, the sentence that the pi tool refuses a second
   watch of the same repository and pull requests in one session. Lines
   103-104: an installed pi package is out of date until `teamwire install`
@@ -131,10 +144,12 @@ these parts of it still hold:
 | 0037 | 9-10 | `--deliver` types the line exactly as the watch printed it |
 | 0037 | 12-15 | `--deliver` still types each line it prints, through `teamwire-deliver`, and still prints a line it cannot deliver. ADR 0054 already superseded the clause about a lead without `reads_watch_lines` |
 | 0037 | 59 | The clause of decision 1 that `--deliver` types the line it printed (WAT-21). The rest of decision 1 stands |
-| 0039 | 1, 3-7 | The title "`teamwire pr-watch` can deliver its lines", and the status sentence that it gives `pr-watch` a `--deliver` mode |
+| 0039 | 1 | The title's first clause, "`teamwire pr-watch` can deliver its lines". Its second clause, about the pi tool, stands |
+| 0039 | 3-6 | The clause of the status sentence that gives `pr-watch` "what ADR 0023 gave `teamwire watch`, a `--deliver` mode for a lead that cannot read a command's output as it is printed". Line 3's first sentence and the clause about the pi tool on lines 6-7 stand |
 | 0039 | 33-43 | Decision 1: `pr-watch --deliver <team>` types each line into that team's lead pane through `deliver_to_lead`, each delivery ends within 15 s, and a member session is refused |
 | 0039 | 45-52 | Decision 2: a delivered line carries the undated prefix `[teamwire:<team>]`. The last sentence, that `pr-watch` prints with no prefix, stands for every run |
 | 0039 | 77-82 | The first two rejected options, which chose how the flag reached the delivery code and named the team |
+| 0039 | 84-85 | The reason "so `--deliver` would put each line into the session twice, once typed into the pane and once steered". The flag now types nothing, because both commands refuse it. The rejected option on line 83 stands |
 | 0039 | 95-96, 99-102 | `pr-watch --deliver` takes no lease, so two of them both type their lines, and `teamwire close` does not stop a background `pr-watch --deliver` |
 | 0039 | 105-107 | The test `pr_watch_deliver_types_each_printed_line_into_the_leads_pane` |
 | 0054 | 17, 22-25 | Point 9 of ADR 0023 keeps four parts, one of them that `teamwire watch <team> --deliver` types each line through `teamwire-deliver` (`deliver_to_lead`). Point 9 now keeps three parts: the wiring's choice of the lead harness, the selector of `teamwire install`, and the shared skill text |
