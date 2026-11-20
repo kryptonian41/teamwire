@@ -239,24 +239,18 @@ pub(crate) fn text(view: &View) -> String {
             "models: {}. Write a value of the first column in a spec's `model`.",
             catalog.models.len()
         ));
-        let mut rows = vec![cells(&[
-            "model", "family", "aliases", "context", "thinking",
-        ])];
-        rows.extend(
-            catalog
-                .models
-                .iter()
-                .zip(&view.families)
-                .map(|(m, family)| {
-                    vec![
-                        spec_value(m),
-                        family.as_str().to_owned(),
-                        or_dash(&m.aliases.join(", ")),
-                        m.context_tokens.map_or_else(|| "-".to_owned(), tokens),
-                        if m.thinking { "yes" } else { "no" }.to_owned(),
-                    ]
-                }),
-        );
+        let header = ["model", "family", "aliases", "context", "thinking"];
+        let mut rows = vec![cells(&header)];
+        let models = catalog.models.iter().zip(&view.families);
+        rows.extend(models.map(|(m, family)| {
+            vec![
+                spec_value(m),
+                family.as_str().to_owned(),
+                or_dash(&m.aliases.join(", ")),
+                m.context_tokens.map_or_else(|| "-".to_owned(), tokens),
+                if m.thinking { "yes" } else { "no" }.to_owned(),
+            ]
+        }));
         out.extend(table(&rows));
     }
     if let Some(class) = &view.class {
