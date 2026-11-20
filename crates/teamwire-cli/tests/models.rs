@@ -7,14 +7,19 @@
 #[path = "../src/cmd/models/view.rs"]
 mod view;
 
+#[path = "../src/cmd/models/family.rs"]
+mod family;
+
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::Path;
 use std::time::Duration;
 
 use serde_json::Value;
 use teamwire_core::{
-    CatalogSource, Command, Evidence, EvidenceEntry, EvidenceKind, HarnessError, HarnessErrorCode,
-    ModelCatalog, ModelInfo, RunOutput, TaskClass,
+    CallerSession, CatalogSource, Command, Evidence, EvidenceEntry, EvidenceKind, Harness,
+    HarnessCaps, HarnessError, HarnessErrorCode, HarnessId, Host, LaunchSpec, Liveness,
+    MemberLaunch, ModelCatalog, ModelFamily, ModelInfo, OtelConfig, Pid, Place, Role, RunOutput,
+    ScreenState, SessionId, StartupOutcome, TaskClass, TeamName, TrustPolicy, TurnEnd,
 };
 use teamwire_fakes::{FakeHarness, TestHome};
 use teamwire_otel::{OutcomeReport, OutcomeRow, VerifyCounts};
@@ -287,15 +292,19 @@ fn the_plain_list_shows_the_harness_source_efforts_and_spec_values() {
     assert_eq!(line(2), "efforts: low, high");
     assert!(line(3).starts_with("models: 4."), "{text}");
     let cells = |i: usize| line(i + 4).split_whitespace().collect::<Vec<_>>();
-    assert_eq!(cells(0), ["model", "aliases", "context", "thinking"]);
+    assert_eq!(
+        cells(0),
+        ["model", "family", "aliases", "context", "thinking"]
+    );
     assert_eq!(
         cells(1),
-        ["claude-bridge/claude-opus-5-5", "-", "1M", "yes"]
+        ["claude-bridge/claude-opus-5-5", "claude", "-", "1M", "yes"]
     );
     assert_eq!(
         cells(2),
         [
             "amazon-bedrock/us.anthropic.claude-opus-5-5-20261001-v1:0",
+            "claude",
             "-",
             "200K",
             "yes"
@@ -303,10 +312,90 @@ fn the_plain_list_shows_the_harness_source_efforts_and_spec_values() {
     );
     assert_eq!(
         cells(3),
-        ["claude-bridge/claude-sonnet-5-5", "sonnet", "-", "yes"]
+        [
+            "claude-bridge/claude-sonnet-5-5",
+            "claude",
+            "sonnet",
+            "-",
+            "yes"
+        ]
     );
-    assert_eq!(cells(4), ["openai/gpt-6-luna", "-", "65.5K", "no"]);
+    assert_eq!(cells(4), ["openai/gpt-6-luna", "gpt", "-", "65.5K", "no"]);
     assert_eq!(lines.len(), 9, "no class sections without --for: {text}");
+}
+
+/// A harness that places every model in one family, as Claude Code does,
+/// and is otherwise the fake.
+struct OneFamily(FakeHarness, ModelFamily);
+
+impl Harness for OneFamily {
+    fn id(&self) -> HarnessId {
+        self.0.id()
+    }
+    fn capabilities(&self) -> HarnessCaps {
+        self.0.capabilities()
+    }
+    fn launch_spec(&self, m: &MemberLaunch) -> Result<LaunchSpec, HarnessError> {
+        self.0.launch_spec(m)
+    }
+    fn resume_spec(&self, m: &MemberLaunch, s: &SessionId) -> Result<LaunchSpec, HarnessError> {
+        self.0.resume_spec(m, s)
+    }
+    fn caller_session(&self, get: &dyn Fn(&str) -> Option<String>) -> Option<CallerSession> {
+        self.0.caller_session(get)
+    }
+    fn processes_for_session(
+        &self,
+        s: &SessionId,
+        timeout: Duration,
+    ) -> Result<Vec<Pid>, HarnessError> {
+        self.0.processes_for_session(s, timeout)
+    }
+    fn is_alive(&self, s: &SessionId, timeout: Duration) -> Result<Liveness, HarnessError> {
+        self.0.is_alive(s, timeout)
+    }
+    fn parse_turn_end(&self, stdin: &[u8]) -> Result<TurnEnd, HarnessError> {
+        self.0.parse_turn_end(stdin)
+    }
+    fn hold_reply(&self, note: &str) -> Vec<u8> {
+        self.0.hold_reply(note)
+    }
+    fn screen_state(&self, tail: &str) -> ScreenState {
+        self.0.screen_state(tail)
+    }
+    fn answer_startup(
+        &self,
+        host: &dyn Host,
+        place: &Place,
+        policy: TrustPolicy,
+    ) -> Result<StartupOutcome, HarnessError> {
+        self.0.answer_startup(host, place, policy)
+    }
+    fn otel_env(&self, team: &TeamName, role: &Role, base: &OtelConfig) -> Vec<(String, String)> {
+        self.0.otel_env(team, role, base)
+    }
+    fn models(&self, timeout: Duration) -> Result<ModelCatalog, HarnessError> {
+        self.0.models(timeout)
+    }
+    fn model_family(&self, _model: &str) -> ModelFamily {
+        self.1
+    }
+}
+
+#[test]
+fn the_family_column_is_the_harness_s_own_answer() {
+    // The core would place `openai/gpt-6-luna` as GPT. The harness's answer
+    // wins, because only a harness knows that all its models are of one family.
+    let harness = OneFamily(fake(Ok(catalog())), ModelFamily::Grok);
+    let view = gather(&harness, None, &evidence(), &report).unwrap();
+    let text = view::text(&view);
+    let rows: Vec<&str> = text.lines().skip(5).collect();
+    assert_eq!(rows.len(), 4, "{text}");
+    for row in rows {
+        assert_eq!(row.split_whitespace().nth(1), Some("grok"), "{text}");
+    }
+    let doc = view::json(&view);
+    assert_eq!(at(&doc, "/catalog/models/3/family"), "grok");
 }
 
 #[test]
@@ -496,6 +585,13 @@ fn the_json_holds_harness_catalog_and_with_a_class_evidence_and_outcomes() {
     assert_eq!(at(&plain, "/catalog/source"), "listed");
     assert_eq!(at(&plain, "/catalog/models/2/aliases/0"), "sonnet");
     assert_eq!(at(&plain, "/catalog/efforts/1"), "high");
+    let families: Vec<&Value> = at(&plain, "/catalog/models")
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| at(m, "/family"))
+        .collect();
+    assert_eq!(families, ["claude", "claude", "claude", "gpt"]);
 
     let doc = view::json(&view_for(Some(TaskClass::RootCause)).unwrap());
     let keys: Vec<&String> = doc.as_object().unwrap().keys().collect();
@@ -614,6 +710,14 @@ fn harness_names_another_harness_and_an_unknown_one_is_a_usage_error() {
     assert!(o.success(), "{}", err(&o));
     assert!(out(&o).starts_with("harness: claude-code\n"), "{}", out(&o));
     assert!(out(&o).contains("\n  claude-opus-5-5 "), "{}", out(&o));
+    let header = out(&o).lines().nth(4).unwrap_or_default().to_owned();
+    assert!(
+        header.split_whitespace().take(2).eq(["model", "family"]),
+        "{header}"
+    );
+    for row in out(&o).lines().skip(5) {
+        assert_eq!(row.split_whitespace().nth(1), Some("claude"), "{row}");
+    }
     let o = teamwire(
         home.path(),
         home.path(),
@@ -685,6 +789,8 @@ fn for_a_class_the_binary_shows_the_compiled_evidence_and_empty_past_teams() {
     assert_eq!(shown, in_file);
     assert_eq!(at(&doc, "/outcomes/teams"), 0);
     assert_eq!(at(&doc, "/outcomes/rows").as_array().unwrap().len(), 0);
+    // pi's Bedrock row places by its id, after the provider and vendor words.
+    assert_eq!(at(&doc, "/catalog/models/0/family"), "claude");
 }
 
 #[test]

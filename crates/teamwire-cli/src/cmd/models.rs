@@ -9,6 +9,7 @@
 //!
 //! Never: write anything, or name one model as the best. The lead chooses.
 
+mod family;
 mod view;
 
 use std::process::ExitCode;
