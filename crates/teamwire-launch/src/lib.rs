@@ -29,6 +29,7 @@ mod member_steps;
 mod plan;
 mod plan_models;
 mod plan_rules;
+mod plan_sets;
 mod plan_worktree;
 mod reopen;
 mod reopen_lead;
