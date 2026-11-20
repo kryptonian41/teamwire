@@ -22,7 +22,9 @@
 # so a deleted or renamed file still tests the member that names it. The script
 # works this out from the code on every run, so no list of crates is kept by
 # hand. Its limits: it cannot see a path that code builds in pieces, such as
-# join("examples").join("presets"), so give such a path one literal.
+# join("examples").join("presets"), so give such a path one literal. It also
+# misreads a string continued with a backslash at the end of a line, and
+# finds no path in it.
 # Tests run under nextest, as in the gate (docs/conventions.md section 2).
 # Written for bash 3.2 (macOS), so no mapfile and no associative arrays.
 set -u
