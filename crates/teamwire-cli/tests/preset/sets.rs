@@ -253,3 +253,65 @@ fn every_count_of_the_presets_says_six_shapes_and_five_steps() {
         );
     }
 }
+
+fn repo_doc(path: &str) -> String {
+    std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join(path),
+    )
+    .unwrap()
+}
+
+/// The research note quotes, word for word, each sentence of the older note
+/// that is no longer true, and leaves the older note as it was.
+#[test]
+fn the_research_note_quotes_the_older_note_word_for_word() {
+    let note = repo_doc("docs/research/2026-11-19-model-family-sets.md");
+    let older = flat(&repo_doc(
+        "docs/research/2026-11-03-elephant-goldfish-model.md",
+    ));
+    let (_, section) = note
+        .split_once(
+            "## 7. Sentences in the 2026-11-03 elephant-goldfish note that are no longer true",
+        )
+        .unwrap();
+    let quotes: Vec<&str> = section
+        .lines()
+        .filter_map(|l| l.trim_start().strip_prefix("> "))
+        .collect();
+    assert!(quotes.len() >= 10, "{} quotes", quotes.len());
+    for quote in quotes {
+        assert!(
+            older.contains(&flat(quote)),
+            "not in the older note: {quote}"
+        );
+    }
+}
+
+/// The decision record states the twelve rules, adds to ADR 0034 and ADR
+/// 0053, and supersedes nothing.
+#[test]
+fn the_decision_record_states_the_rules_of_a_set() {
+    let adr = flat(&repo_doc(
+        "docs/adr/0061-sets-of-readers-on-several-model-families.md",
+    ));
+    for phrase in [
+        "Supersedes no record. Adds to ADR 0034",
+        "and to ADR 0053",
+        "A set is one review round, not a second review.",
+        "The repository names no model for a set.",
+        "No source measured a third reader",
+        "No source built and tested a joined plan.",
+        "A planner set is a later step",
+        "docs/research/2026-11-19-model-family-sets.md",
+    ] {
+        assert!(adr.contains(phrase), "ADR 0061 lacks: {phrase}");
+    }
+    for rule in 1..=12 {
+        assert!(
+            adr.contains(&format!(" {rule}. ")),
+            "ADR 0061 lacks rule {rule}"
+        );
+    }
+}
