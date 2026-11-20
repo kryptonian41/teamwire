@@ -3534,6 +3534,17 @@
     },
     {
       "task_class": "judgement",
+      "model": "gpt-6.2-astra",
+      "effort": "xhigh",
+      "rank": 1,
+      "claim": "OpenAI's reasoning guide lists security and code review under xhigh, to be used only when evals show a clear benefit; GPT-6.2 Astra and Sol reject effort none.",
+      "source": "OpenAI reasoning models guide",
+      "url": "https://developers.openai.com/api/docs/guides/reasoning",
+      "published": "2026-11-20",
+      "kind": "vendor"
+    },
+    {
+      "task_class": "judgement",
       "model": "gpt-6-astra",
       "effort": "low",
       "rank": 1,
