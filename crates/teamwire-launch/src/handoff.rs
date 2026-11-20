@@ -78,13 +78,18 @@ pub fn plan_handoff<'r>(ctx: &Ctx<'r>, role: &Role) -> Result<HandoffPlan<'r>, H
     let (team, member, options, unread) = ctx
         .store
         .read(|tx| {
-            let unread = tx.deliveries_for(&Recipient::Member(role.clone()), &UNREAD)?;
-            Ok((
-                tx.team()?,
-                tx.member(role)?,
-                tx.run_options(role)?,
-                unread.items.len(),
-            ))
+            let member = tx.member(role)?;
+            // The count is what the member's inbox shows: the inbox leaves
+            // out a message the member may not be shown (`Member::hears`,
+            // MSG-3), which a quiet member's row holds from anyone but its
+            // own lead.
+            let unread = tx
+                .inbox(&Recipient::Member(role.clone()), &UNREAD)?
+                .items
+                .iter()
+                .filter(|e| member.as_ref().is_none_or(|m| m.hears(&e.message.sender)))
+                .count();
+            Ok((tx.team()?, member, tx.run_options(role)?, unread))
         })
         .map_err(|e| HandoffError::Store(e.to_string()))?;
     plan_with(ctx, role, (team, member, options, unread)).map_err(HandoffError::Refused)

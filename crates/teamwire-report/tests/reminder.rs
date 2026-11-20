@@ -686,6 +686,33 @@ fn a_member_that_may_not_send_is_not_told_to_ask_a_question() {
     assert!(note.contains("record blocked"), "{note}");
 }
 
+/// The note offers a question only when `Member::may_send` allows one. An
+/// implementer whose spec set `quiet` sends no message, so it is told to
+/// record blocked. The same implementer without `quiet` is still told to ask.
+#[test]
+fn a_member_quiet_by_its_spec_is_not_told_to_ask_a_question() {
+    for (quiet, asks) in [(true, false), (false, true)] {
+        let (mut rig, api) = team();
+        rig.store
+            .write(|tx| tx.set_member_marks(&api, quiet, None))
+            .unwrap();
+        let (message, _) = reprompt(&mut rig, &api, 301);
+        ack(&mut rig, &api, &message);
+        let note = hold_note(on_turn_end(&mut rig.ctx(), &api, &stop("api-1")));
+        assert!(note.contains("no result"), "quiet {quiet}: {note}");
+        assert_eq!(
+            note.contains("ask the lead with a question"),
+            asks,
+            "quiet {quiet}: {note}"
+        );
+        assert_eq!(
+            note.contains("record blocked with the reason"),
+            !asks,
+            "quiet {quiet}: {note}"
+        );
+    }
+}
+
 /// Stops of one generation that run at the same time, each on its own
 /// connection, as hook processes do, record one corrective hold between
 /// them, and only that stop is held for it.

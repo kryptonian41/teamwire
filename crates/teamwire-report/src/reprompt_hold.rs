@@ -45,8 +45,9 @@ pub(crate) struct Corrective {
     pub(crate) generation: u32,
     pub(crate) from_user: bool,
     pub(crate) reason: Reason,
-    /// Whether the member may send the lead a question. A reviewer, plan
-    /// reviewer or closer may not, so its note does not tell it to.
+    /// Whether the member may send the lead a question (`Member::may_send`).
+    /// A quiet member may not, whether its kind is quiet or its spec set
+    /// `quiet`, so its note does not tell it to.
     pub(crate) may_ask: bool,
 }
 
@@ -186,7 +187,7 @@ fn owed_in(
         generation: member.generation,
         from_user: message.sender == Actor::User,
         reason,
-        may_ask: member.kind.may_send(MessageType::Question),
+        may_ask: member.may_send(MessageType::Question),
     }))
 }
 
