@@ -1183,7 +1183,7 @@ this account. Then come the effort levels, lowest first, and one line per
 model. Each line gives the value a spec's `model` takes (`provider/id` for a
 model reached through a named provider, as in pi), its family, its aliases,
 its context window and whether it takes an effort level. The family column
-names the model's vendor line: `claude`, `gpt`, `gemini`, `grok`,
+names the model's vendor line: `claude`, `gpt`, `gemini`, `gemma`, `grok`,
 `deepseek`, `kimi`, `glm`, `qwen`, `mistral`, `llama`, or `unknown` for a
 model the family tables do not place (ADR 0056). The harness works out the
 family from the spec value, through `Harness::model_family`. Every Claude

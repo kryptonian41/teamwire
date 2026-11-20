@@ -811,15 +811,15 @@ pub struct Config { pub poll_s: u64, pub silent_polls: u32, pub startup_grace_s:
 pub struct OtelConfig { pub endpoint: Option<String>, pub headers: Vec<(String, String)> }
 
 /// The vendor line of a model (`teamwire_core::models`, ADR 0056). Strings:
-/// claude, gpt, gemini, grok, deepseek, kimi, glm, qwen, mistral, llama, unknown.
-pub enum ModelFamily { Claude, Gpt, Gemini, Grok, Deepseek, Kimi, Glm, Qwen,
+/// claude, gpt, gemini, gemma, grok, deepseek, kimi, glm, qwen, mistral, llama, unknown.
+pub enum ModelFamily { Claude, Gpt, Gemini, Gemma, Grok, Deepseek, Kimi, Glm, Qwen,
                        Mistral, Llama, Unknown }
 /// The family of a spec's `model` string, read from the string alone. It
-/// reads no file, calls nothing and never guesses: a string the two tables
+/// reads no file, calls nothing and never guesses: a string the tables
 /// do not place is `Unknown`. The string is lowercased and loses a trailing
 /// `:suffix`. An `openrouter/<vendor>/<id>` string is placed by its vendor
 /// part alone, after a leading `~`, so `openrouter/openai/o3` is `Gpt`; the
-/// `google` vendor also needs an id that starts with `gemini`. Any other
+/// `google` vendor's id must start with `gemini` or `gemma`. Any other
 /// string is placed by the start of its `normalise_model` name, such as
 /// `claude`, `gpt-` or `deepseek`. Launch and `teamwire models` call
 /// `Harness::model_family`, not this function, so a harness can answer for

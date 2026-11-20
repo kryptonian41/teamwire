@@ -30,12 +30,15 @@ of its own: it never names a product and never matches a harness id
 
 1. **The core reads a family from a model string alone.**
    `teamwire_core::model_family(model)` returns a `ModelFamily`: `claude`,
-   `gpt`, `gemini`, `grok`, `deepseek`, `kimi`, `glm`, `qwen`, `mistral`,
-   `llama` or `unknown`. The function lowercases the string and drops a
+   `gpt`, `gemini`, `gemma`, `grok`, `deepseek`, `kimi`, `glm`, `qwen`,
+   `mistral`, `llama` or `unknown`. The function lowercases the string and drops a
    trailing `:suffix`. It places an `openrouter/<vendor>/<id>` string by
-   its vendor part alone, after a leading `~`. Google's vendor part also
-   needs an id that starts with `gemini`, because Google lists Gemma models
-   under its name. Any other string is placed by the start of its
+   its vendor part alone, after a leading `~`. Google's vendor part is the
+   one exception, because Google makes two lines: an id that starts with
+   `gemini` is `gemini`, one that starts with `gemma` is `gemma`, and any
+   other Google id is `unknown`. Gemma is its own family, not Gemini, so a
+   Gemini reader and a Gemma reader in one set count as two families. Any
+   other string is placed by the start of its
    `normalise_model` name, after the provider and region words are gone.
 2. **The tables name vendors and the first word of their ids, never a
    model.** A vendor's next model needs no change. A string the tables do
