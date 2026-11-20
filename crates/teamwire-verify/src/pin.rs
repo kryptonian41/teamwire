@@ -11,7 +11,9 @@
 //!
 //! - the newest verify record's head, the commit the closer must check;
 //! - R's worktree HEAD now, so a record older than the member's last
-//!   commit is reported as out of date, not taken as evidence;
+//!   commit is reported as out of date, not taken as evidence. A HEAD that
+//!   cannot be proven (no checkout, not a checkout of its own) is refused
+//!   too, except for a removed member, which makes no more commits;
 //! - the clone's HEAD.
 //!
 //! A member with no commit to check (a pane member verify skipped, or one
@@ -103,17 +105,26 @@ pub fn pin(ctx: &Ctx<'_>, role: &Role, clone: &Path) -> Result<Pin, VerifyError>
         return Ok(out);
     }
     out.expected = Some(expected.clone());
-    if member.state == MemberState::Started && member.cwd.is_dir() {
-        let now = Git::new(ctx.platform, &member.cwd).head().ok();
-        if let Some(now) = &now
-            && *now != expected
-        {
-            out.problems.push(format!(
-                "{role}'s worktree is now at {now}, but its newest verify ran at {expected}: run \
-                 `teamwire verify <team> --role {role}` again before you take evidence"
-            ));
+    // A removed member makes no more commits, so its record cannot fall
+    // behind. Any other member's current commit must be proven: one that
+    // cannot be read is not taken to match.
+    if member.state != MemberState::Removed {
+        match current_head(ctx, &member) {
+            Ok(now) => {
+                if now != expected {
+                    out.problems.push(format!(
+                        "{role}'s worktree is now at {now}, but its newest verify ran at \
+                         {expected}: run `teamwire verify <team> --role {role}` again before you \
+                         take evidence"
+                    ));
+                }
+                out.worktree_head = Some(now);
+            }
+            Err(why) => out.problems.push(format!(
+                "cannot verify {role}'s current commit: {why}; the record at {expected} may be \
+                 out of date, so it is not taken as evidence"
+            )),
         }
-        out.worktree_head = now;
     }
     if !clone.is_dir() {
         out.problems.push(format!(
@@ -140,4 +151,35 @@ pub fn pin(ctx: &Ctx<'_>, role: &Role, clone: &Path) -> Result<Pin, VerifyError>
             .push(format!("the clone's HEAD cannot be read: {e}")),
     }
     Ok(out)
+}
+
+/// The commit the member's checkout is on now. A worktree member's folder
+/// must be the top of its own checkout: an empty folder inside the
+/// repository would otherwise give the repository's HEAD, which is not the
+/// member's. Every failure is returned with its reason, never taken for a
+/// match.
+fn current_head(ctx: &Ctx<'_>, member: &teamwire_core::Member) -> Result<String, String> {
+    let cwd = &member.cwd;
+    if !cwd.is_dir() {
+        return Err(format!("its checkout {} does not exist", cwd.display()));
+    }
+    let git = Git::new(ctx.platform, cwd);
+    if member.mode == teamwire_core::Mode::Worktree {
+        let top = git
+            .stdout(&["rev-parse", "--show-toplevel"])
+            .map_err(|e| format!("{} is not a git checkout ({e})", cwd.display()))?;
+        let same = std::fs::canonicalize(top.trim())
+            .ok()
+            .zip(std::fs::canonicalize(cwd).ok())
+            .is_some_and(|(a, b)| a == b);
+        if !same {
+            return Err(format!(
+                "{} is not the top of its own checkout (git reads {} there)",
+                cwd.display(),
+                top.trim()
+            ));
+        }
+    }
+    git.head()
+        .map_err(|e| format!("the HEAD of {} cannot be read ({e})", cwd.display()))
 }

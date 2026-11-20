@@ -147,6 +147,25 @@ fn the_pin_refuses_a_same_named_branch_at_the_base_and_accepts_the_verified_sha(
         "{}",
         run.all()
     );
+
+    // With its checkout moved aside, or swapped for an empty folder inside
+    // the repository (where git would read the repository's own HEAD), its
+    // current commit cannot be proven, and nothing is pinned.
+    let aside = w.work().join("writer-aside");
+    std::fs::rename(&worktree, &aside).unwrap();
+    for setup in ["missing", "empty"] {
+        if setup == "empty" {
+            std::fs::create_dir_all(&worktree).unwrap();
+        }
+        let run = pin();
+        assert_eq!(run.code, 1, "{setup}: {}", run.all());
+        assert!(
+            run.err.contains("cannot verify writer's current commit"),
+            "{setup}: {}",
+            run.all()
+        );
+        assert!(!run.out.contains("pinned:"), "{setup}: {}", run.all());
+    }
 }
 
 #[test]
@@ -179,4 +198,65 @@ fn a_member_verify_recorded_with_no_commit_has_nothing_to_pin() {
     );
     assert_eq!(run.code, 0, "{}", run.all());
     assert!(run.out.contains("there is nothing to pin"), "{}", run.all());
+}
+
+/// A member removed on purpose makes no more commits, so its gone
+/// checkout is not a doubt: the pin holds on its verified commit.
+#[test]
+fn a_removed_member_still_pins_to_its_verified_commit() {
+    let step = format!(
+        "{}{}{}",
+        sh::commit(),
+        sh::report(true),
+        sh::done("wrote writer.txt")
+    );
+    let w = World::new(&ClaudeScript {
+        turns: vec![vec![Step::Run(step)]],
+        ..ClaudeScript::default()
+    });
+    let spec = json!({"team": "demo", "title": "Demo", "children": [
+        {"role": "writer", "title": "Writer", "kind": "implementer", "mode": "worktree",
+         "repo": w.repo(), "task": "write it", "check": "test -f writer.txt",
+         "owns": ["writer.txt"]}]});
+    let launch = w.launch(&spec, &[]);
+    assert_eq!(launch.code, 0, "{}", launch.all());
+    w.wait_lead_screen(
+        "[teamwire:demo] writer finished (done)",
+        Duration::from_secs(30),
+    );
+    let sha = w.git(&w.repo().join(".worktrees/writer"), &["rev-parse", "HEAD"]);
+    let verify = w.teamwire(&["verify", "demo", "--role", "writer"], None);
+    assert_eq!(verify.code, 0, "{}", verify.all());
+    let removed = w.teamwire(&["close", "demo", "--role", "writer"], None);
+    assert_eq!(removed.code, 0, "{}", removed.all());
+    assert!(!w.repo().join(".worktrees/writer").exists());
+
+    w.git(
+        w.work(),
+        &[
+            "clone",
+            "--quiet",
+            &w.repo().display().to_string(),
+            "closer-clone",
+        ],
+    );
+    let clone = w.work().join("closer-clone");
+    w.git(&clone, &["checkout", "--quiet", "--detach", &sha]);
+    let run = w.teamwire(
+        &[
+            "verify",
+            "demo",
+            "--role",
+            "writer",
+            "--pinned-in",
+            &clone.display().to_string(),
+        ],
+        None,
+    );
+    assert_eq!(run.code, 0, "{}", run.all());
+    assert!(
+        run.out.contains(&format!("pinned: writer at {sha}")),
+        "{}",
+        run.all()
+    );
 }
