@@ -14,7 +14,8 @@ even when your task lists its own steps and does not mention them.
 
 Recording your completion is what tells your parent you are done. Your
 final message is then delivered automatically: you do NOT need to
-message the parent yourself.
+message the parent yourself. An answer in chat or a finding is not a
+result: only team_done or `{teamwire} done` records one.
 
 If you get more work after that, do it, then run
 `{teamwire} done` again, or call team_done, as your last act. This

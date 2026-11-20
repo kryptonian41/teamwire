@@ -200,3 +200,33 @@ fn the_member_extension_stamps_and_clears_the_tool() {
     assert!(ext.contains("toolRuns.delete("), "{ext}");
     assert!(ext.contains("tool: newestTool()"), "{ext}");
 }
+
+/// pi settles a run that a person's Escape or a failed request ended with
+/// an outcome other than `completed`. The member's extension returns before
+/// it runs the turn-end hook then, so such a run is neither held nor taken
+/// as the member's stop: only a completed run reaches `hook turn-end`.
+#[test]
+fn the_member_extension_runs_the_turn_end_hook_only_for_a_completed_run() {
+    let dir = tempfile::tempdir().unwrap();
+    let m = member(dir.path());
+    let spec = pi().launch_spec(&m).unwrap();
+    let ext = String::from_utf8(file(&spec, "pi-extension.ts").bytes.clone()).unwrap();
+    assert!(
+        ext.contains("holdOnSettle(pi, always, args(\"hook\", \"turn-end\"))"),
+        "{ext}"
+    );
+    let settle = ext.find("pi.on(\"agent_before_settle\"").unwrap();
+    let body = ext.get(settle..).unwrap();
+    let hook = body.find("await runHook(argv").unwrap();
+    let before = body.get(..hook).unwrap();
+    let guard = before.find("if (!on() || event.outcome !== \"completed\") {");
+    assert!(
+        guard.is_some(),
+        "no outcome check before the hook: {before}"
+    );
+    let skipped = guard.and_then(|g| before.get(g..)).unwrap_or_default();
+    assert!(
+        skipped.contains("held = false;\n      return;"),
+        "{skipped}"
+    );
+}

@@ -24,6 +24,7 @@ mod closer;
 mod delete;
 mod empty;
 mod exclude;
+mod expect;
 mod facts;
 mod git;
 mod handoff;
@@ -34,6 +35,7 @@ mod remove;
 mod team_close;
 mod worktree_lock;
 
+pub use expect::Expected;
 pub use handoff::{close_handoff_place, handoff_refusals};
 pub use plan::plan_close_with;
 
@@ -65,6 +67,15 @@ pub struct CloseOpts {
     /// The team being closed. Only a store with no team row needs it, to
     /// find the directory; without it that store is refused.
     pub team: Option<TeamName>,
+    /// `--expect role:generation:status`: results a whole-team close
+    /// requires, checked before any step and again under the close lock
+    /// (ADR 0059).
+    #[serde(default)]
+    pub expect: Vec<Expected>,
+    /// `--abandon <why>`: close the team as it is although the lead's newest
+    /// send was refused. The reason is recorded as a close step.
+    #[serde(default)]
+    pub abandon: Option<String>,
 }
 
 /// One step of a close, as planned.

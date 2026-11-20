@@ -64,3 +64,24 @@ impl ReportGaps {
         !self.report_missing && self.commits_without_line.is_empty() && !self.decisions_missing
     }
 }
+
+/// A `blocked` result with this summary is a question round (WAT-22): after
+/// an optional `handoff: `, it matches `^[1-9][0-9]* questions? for the
+/// parent\.`. The member waits for the lead's answers, so it is not done.
+#[must_use]
+pub fn asks_the_parent(summary: &str) -> bool {
+    let s = summary.strip_prefix("handoff: ").unwrap_or(summary);
+    let rest = s.trim_start_matches(|c: char| c.is_ascii_digit());
+    rest.len() < s.len()
+        && !s.starts_with('0')
+        && [" questions for the parent.", " question for the parent."]
+            .iter()
+            .any(|tail| rest.starts_with(tail))
+}
+
+/// A result whose summary starts `handoff: `: the member asked for a fresh
+/// session, and its next session carries on (ADR 0043).
+#[must_use]
+pub fn is_handoff(summary: &str) -> bool {
+    summary.starts_with("handoff: ")
+}

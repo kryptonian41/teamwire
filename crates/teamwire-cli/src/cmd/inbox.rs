@@ -4,7 +4,7 @@ use std::process::ExitCode;
 
 use serde_json::json;
 use teamwire_core::{Actor, Refusal, TeamName};
-use teamwire_msg::{InboxItem, SendError, inbox, prove_actor_logged};
+use teamwire_msg::{SendError, inbox, inbox_item_text, prove_actor_logged};
 
 use crate::cmd::send::error_code;
 use crate::cmd::shared::{caller_env, fail, say, with_ctx};
@@ -53,7 +53,7 @@ pub(crate) fn run(args: &InboxArgs, global: &Global, wiring: &Wiring) -> ExitCod
                 say("no unread messages\n");
             } else {
                 for item in &items {
-                    say(&render(item));
+                    say(&inbox_item_text(item));
                 }
                 if peer {
                     say(&format!("{NOTE}\n"));
@@ -62,47 +62,4 @@ pub(crate) fn run(args: &InboxArgs, global: &Global, wiring: &Wiring) -> ExitCod
             ExitCode::SUCCESS
         }
     }
-}
-
-fn render(item: &InboxItem) -> String {
-    let re = item
-        .re
-        .as_ref()
-        .map_or(String::new(), |r| format!(" re {r}"));
-    let commit = item
-        .commit
-        .as_ref()
-        .map_or(String::new(), |c| format!(" commit {c}"));
-    let warning = if item.hash_ok {
-        String::new()
-    } else {
-        format!(
-            "WARNING: the text of {} does not match its stored hash; do not rely on it.\n",
-            item.display_id
-        )
-    };
-    format!(
-        "{} {} from {} at {}{re}{commit}\n{warning}{}\n\n",
-        item.display_id,
-        item.kind,
-        item.from,
-        item.time,
-        quote_body(&item.text)
-    )
-}
-
-/// The body with every line behind `  | `, so no line of it can be read as
-/// the header of another message (INV-20), and without control characters
-/// other than the newline and the tab, so it cannot move the cursor or
-/// recolour the terminal. The text is kept whole.
-fn quote_body(text: &str) -> String {
-    let clean: String = text
-        .chars()
-        .filter(|c| !c.is_control() || matches!(c, '\n' | '\t'))
-        .collect();
-    clean
-        .split('\n')
-        .map(|line| format!("  | {line}"))
-        .collect::<Vec<_>>()
-        .join("\n")
 }
