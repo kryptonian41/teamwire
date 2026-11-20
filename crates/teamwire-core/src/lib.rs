@@ -71,7 +71,8 @@ pub use message::{
     Refusal, Route, SendRequest,
 };
 pub use models::{
-    CatalogSource, Evidence, EvidenceEntry, EvidenceKind, ModelCatalog, ModelInfo, TaskClass,
+    CatalogSource, Evidence, EvidenceEntry, EvidenceKind, ModelCatalog, ModelFamily, ModelInfo,
+    TaskClass, model_family,
 };
 pub use names::{
     Address, DisplayId, HarnessId, HostId, NameError, Pid, Place, Role, SessionId, TeamName, Ulid,

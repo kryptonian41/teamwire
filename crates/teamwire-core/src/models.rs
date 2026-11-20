@@ -10,6 +10,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::strings::string_enum;
 
+mod family;
+
+pub use family::{ModelFamily, model_family};
+
 string_enum! {
     /// How hard a member's task is to reason about, as the lead judges it at
     /// launch. The class picks the model and effort; the member's `kind`
