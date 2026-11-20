@@ -1181,8 +1181,16 @@ reaches on this machine. `builtin` means the adapter carries a fixed list
 from the harness's docs, so a model on it may still be out of reach for
 this account. Then come the effort levels, lowest first, and one line per
 model. Each line gives the value a spec's `model` takes (`provider/id` for a
-model reached through a named provider, as in pi), its aliases, its context
-window and whether it takes an effort level. When the harness cannot list
+model reached through a named provider, as in pi), its family, its aliases,
+its context window and whether it takes an effort level. The family column
+names the model's vendor line: `claude`, `gpt`, `gemini`, `grok`,
+`deepseek`, `kimi`, `glm`, `qwen`, `mistral`, `llama`, or `unknown` for a
+model the family tables do not place (ADR 0056). The harness works out the
+family from the spec value, through `Harness::model_family`. Every Claude
+Code model is `claude`. pi's models are placed by `model_family` in
+`teamwire-core`, so `openrouter/openai/o3` is `gpt` by its vendor part. The
+family is a label only: nothing picks a harness or refuses a launch by it.
+When the harness cannot list
 its models, the command prints the harness's reason and exits 1. pi's list
 leaves out the providers named in `TEAMWIRE_PI_EXCLUDE_PROVIDERS`, read from
 the environment, else from `config.toml` in the state directory that
@@ -1216,7 +1224,8 @@ into one score or names one best model:
 
 An unknown class is a usage error, exit 3, and the message lists the seven
 classes. `--json` prints one object with `harness` and `catalog` (the
-`ModelCatalog`). With `--for` it also holds `task_class`, `evidence`
+`ModelCatalog`). Each object in `catalog.models` also holds `family`, the
+same string as the text's family column. With `--for` it also holds `task_class`, `evidence`
 (`as_of`, `reachable` entries with their `spec_values`, `unreachable`
 entries) and `outcomes` (`teams`, `rows` with a `small_sample` flag each,
 `unclassified` with `rows` and `members`, and `errors`).
