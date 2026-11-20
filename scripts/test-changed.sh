@@ -15,14 +15,14 @@
 # A changed file tests the member whose directory holds it. It also tests
 # each member that reads it from outside that member's directory. A member
 # reads a path when one of its .rs files holds a string literal that starts
-# with ../ (or /../) and that literal, resolved against the file's folder or
+# with ../ (or /../, or {}/../ in a format string) and that literal, resolved against the file's folder or
 # against the member's folder, names a file or folder outside the member's
 # folder that exists or is itself a changed file. A changed file inside such
 # a folder counts too. A renamed file counts under its old and its new name,
 # so a deleted or renamed file still tests the member that names it. The script
 # works this out from the code on every run, so no list of crates is kept by
-# hand. Its limit: it cannot see a path that code builds in pieces, such as
-# join("examples").join("presets"); give such a path one literal.
+# hand. Its limits: it cannot see a path that code builds in pieces, such as
+# join("examples").join("presets"), so give such a path one literal.
 # Tests run under nextest, as in the gate (docs/conventions.md section 2).
 # Written for bash 3.2 (macOS), so no mapfile and no associative arrays.
 set -u
@@ -73,7 +73,8 @@ is_member() {
 
 # The string literals of Rust code, read from the files named on the command
 # line. Each literal that starts with ../ (or /../, as after
-# concat!(env!("CARGO_MANIFEST_DIR"), ...)) is resolved against the folder of
+# concat!(env!("CARGO_MANIFEST_DIR"), ...), or {}/../, as in a format string
+# given CARGO_MANIFEST_DIR) is resolved against the folder of
 # its file and against the member's folder, and each result outside the
 # member's folder is printed as "<package> <path>". Comments, char literals
 # and raw strings are skipped or read as Rust reads them, so a quote inside
@@ -104,6 +105,8 @@ function emit(p) {
   print pkg, p
 }
 function literal(s,   dir) {
+  # "{}/../x" is a format string whose {} holds the folder of the member.
+  if (substr(s, 1, 3) == "{}/") s = substr(s, 3)
   if (substr(s, 1, 1) == "/") s = substr(s, 2)
   if (substr(s, 1, 3) != "../") return
   dir = FILENAME

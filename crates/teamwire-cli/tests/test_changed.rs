@@ -160,3 +160,16 @@ fn a_root_build_file_asks_for_the_full_gate() {
         run.out
     );
 }
+
+/// The CLI's dialog tests read a fixture of the Claude Code adapter through
+/// the format string `"{}/../teamwire-harness-claude/..."`, with the crate's
+/// folder in the `{}`.
+#[test]
+fn a_fixture_named_through_a_format_string_tests_its_reader() {
+    assert_eq!(
+        changed(
+            "crates/teamwire-harness-claude/tests/fixtures/permission/bash-rmdir-countdown.txt"
+        ),
+        ["teamwire-cli", "teamwire-harness-claude"]
+    );
+}

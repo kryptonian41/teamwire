@@ -128,7 +128,8 @@ none of the three refs it exits 1 and names `TEAMWIRE_BASE`. `--file PATH`,
 which may repeat, names the changed files instead of asking git. A changed
 file also tests each crate that reads it from outside the crate's folder. A
 crate reads a path when one of its `.rs` files holds a string literal that
-starts with `../` (or `/../`, as after `env!("CARGO_MANIFEST_DIR")`), and that
+starts with `../` (or `/../`, as after `env!("CARGO_MANIFEST_DIR")`, or
+`{}/../`, as in a format string given that folder), and that
 literal, resolved against the file's folder or against the crate's folder,
 names a file or folder outside the crate's folder that exists or is itself a
 changed file. A changed file inside such a folder counts too. A rename counts
