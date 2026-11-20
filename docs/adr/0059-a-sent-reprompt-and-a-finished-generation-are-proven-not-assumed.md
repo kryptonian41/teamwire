@@ -82,7 +82,7 @@ failures. Each one let an agent take an unfinished step for a finished one.
    this stop. `crates/teamwire-report/src/reprompt_hold.rs`.
 3. **A pi member's MCP server declares its tools directly.** The member
    extension registers the server with `exposure: "direct"` and a
-   description, as the lead extension already did (ADR 0030 decision 4).
+   description, as the lead extension already did (ADR 0030 decision 3).
    The tools then reach the model as `mcp__teamwire__team_*`, the same names
    as in Claude Code. The CLI commands stay available, and the contracts
    still name both. `crates/teamwire-harness-pi/src/extension.rs`.
