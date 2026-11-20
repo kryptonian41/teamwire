@@ -168,7 +168,7 @@ fn the_skill_and_the_reference_show_the_money_line() {
     let reference = example("skills/teamwire/reference.md");
     let (_, closing) = skill.split_once("## Closing a team down").unwrap();
     assert!(closing.contains(line), "{closing}");
-    assert!(flat(&closing).contains("read a missing line as not recorded, never as zero"));
+    assert!(flat(closing).contains("read a missing line as not recorded, never as zero"));
     assert!(reference.contains(line));
     assert!(reference.contains("The counter `teamwire.member.cost`, unit `usd`"));
 }
