@@ -28,6 +28,11 @@ pub(crate) struct Existing {
     pub(crate) members: Vec<Member>,
     /// Roles that reached `started` at any time (LCH-5).
     pub(crate) ever_started: BTreeSet<Role>,
+    /// The `model` of each role's newest `member.started` event (LCH-34).
+    pub(crate) models: BTreeMap<Role, Option<String>>,
+    /// The members with a set label that reported in their current
+    /// generation (LCH-34).
+    pub(crate) reported: BTreeSet<Role>,
 }
 
 /// Checks the whole spec, and every path the launch will touch (LCH-2).
@@ -114,6 +119,7 @@ pub fn validate(
         .collect();
     disk_check(env, &members, &mut errors);
     crate::plan_rules::planning_warnings(&cx, &members, &mut warnings);
+    crate::plan_sets::set_warnings(&cx, &members, &mut warnings);
     crate::plan_models::model_checks(env.registry, &members, &mut errors, &mut warnings);
     crate::afk::model_warnings(existing.as_ref(), &members, &mut warnings);
     if !errors.is_empty() {
@@ -171,22 +177,37 @@ fn read_existing(
         )]
     };
     let store = Store::open_read_only(env.home, team).map_err(unreadable)?;
-    let (row, members, started) = store
+    let (row, members, started, reported) = store
         .read(|tx| {
             let members = tx.members()?.all_or_corrupt()?;
             let started = tx
                 .events_of_type(EventType::MemberStarted)?
                 .all_or_corrupt()?;
-            Ok((tx.team()?, members, started))
+            let reported = crate::plan_sets::reported(tx, &members)?;
+            Ok((tx.team()?, members, started, reported))
         })
         .map_err(unreadable)?;
     let Some(team_row) = row else {
         return Ok(None);
     };
+    // The events come oldest first, so a role's newest start wins.
+    let models = started
+        .iter()
+        .filter_map(|e| {
+            let model = e
+                .data
+                .get("model")
+                .and_then(|v| v.as_str())
+                .map(str::to_owned);
+            e.role.clone().map(|role| (role, model))
+        })
+        .collect();
     Ok(Some(Existing {
         team: team_row,
         members,
         ever_started: started.into_iter().filter_map(|e| e.role).collect(),
+        models,
+        reported,
     }))
 }
 

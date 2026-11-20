@@ -1,7 +1,7 @@
 //! The rules for a recipient in another team (MSG-20, ADR 0016). That team's
 //! store is opened read-only, so a refused send writes nothing anywhere.
 //! Another team informs and never instructs: a reprompt or a note goes only
-//! to the sender's own team, and a reviewer or closer hears only its own lead.
+//! to the sender's own team, and a quiet member hears only its own lead.
 
 use std::collections::BTreeMap;
 
@@ -60,7 +60,7 @@ pub(super) fn check(
                     if member.state == MemberState::Removed {
                         return Err(Refusal::RemovedRecipient.into());
                     }
-                    if member.kind.is_quiet() {
+                    if member.is_quiet() {
                         return Err(Refusal::RecipientNotAllowed.into());
                     }
                 }

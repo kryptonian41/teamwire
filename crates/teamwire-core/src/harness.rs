@@ -15,7 +15,7 @@ use crate::host::{Host, HostError, PlaceState};
 use crate::lead_setup::LeadSetup;
 use crate::lead_start::{LeadStart, LeadStartSpec};
 use crate::member::{Member, MemberKind};
-use crate::models::ModelCatalog;
+use crate::models::{ModelCatalog, ModelFamily};
 use crate::names::{Address, HarnessId, Pid, Place, Role, SessionId, TeamName};
 use crate::sanitize::OneLine;
 use crate::secret::RedactedEnv;
@@ -172,6 +172,13 @@ pub trait Harness: Send + Sync {
     /// any other carries a fixed list. The default is `Unsupported`.
     fn models(&self, _timeout: Duration) -> Result<ModelCatalog, HarnessError> {
         Err(HarnessError::unsupported())
+    }
+    /// The family of `model`, a spec's `model` value for this harness, to
+    /// label it and to warn about a set (ADR 0056). The default reads the
+    /// string alone (`model_family`). A harness whose every model is of one
+    /// family overrides it, because the core never matches a harness id.
+    fn model_family(&self, model: &str) -> ModelFamily {
+        crate::models::model_family(model)
     }
 }
 

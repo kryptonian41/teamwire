@@ -134,12 +134,23 @@ fn line(m: &MetricValue) -> String {
         let list: Vec<String> = m.labels.iter().map(|(k, v)| format!("{k}={v}")).collect();
         format!("{{{}}}", list.join(","))
     };
-    let value = if m.value.fract() == 0.0 {
+    let value = if m.unit == MONEY_UNIT {
+        money(m.value)
+    } else if m.value.fract() == 0.0 {
         format!("{:.0}", m.value)
     } else {
         format!("{:.3}", m.value)
     };
     format!("{}{labels} {value} {}\n", m.name, m.unit)
+}
+
+/// The unit of a metric in US dollars, such as `teamwire.member.cost`.
+const MONEY_UNIT: &str = "usd";
+
+/// Dollars always to 4 places: 3 would print a reply's $0.0004 as 0.000,
+/// which reads as free.
+fn money(dollars: f64) -> String {
+    format!("{dollars:.4}")
 }
 
 /// How long a repeating export waits between passes (ADR 0005 point 3).
@@ -211,6 +222,22 @@ fn export_pass(home: &Path, wiring: &Wiring, config: &teamwire_otel::OtlpConfig)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Money keeps 4 places even on a whole dollar figure; every other
+    /// metric keeps the shared format.
+    #[test]
+    fn money_prints_4_places_and_other_values_do_not() {
+        let value = |unit: &str, value: f64| MetricValue {
+            name: "m".to_owned(),
+            unit: unit.to_owned(),
+            labels: Vec::new(),
+            value,
+        };
+        assert_eq!(line(&value("usd", 2.0)), "m 2.0000 usd\n");
+        assert_eq!(line(&value("usd", 0.000_42)), "m 0.0004 usd\n");
+        assert_eq!(line(&value("{token}", 2.0)), "m 2 {token}\n");
+        assert_eq!(line(&value("s", 0.123_45)), "m 0.123 s\n");
+    }
 
     #[test]
     fn durations_take_a_unit() {

@@ -233,9 +233,11 @@ fn completed(h: &History, o: &mut Out<'_>) {
     }
 }
 
-/// Token usage is cumulative per session on each `result.delivering` event,
-/// so an event counts what it adds to the previous one of the same session.
-/// The counts of a member then add up to its newest totals.
+/// Token usage and money are cumulative per session on each
+/// `result.delivering` event, so an event counts what it adds to the
+/// previous one of the same session. The counts of a member then add up to
+/// its newest totals. Money is `cost_micro_usd`, millionths of a dollar the
+/// harness recorded, and counts in dollars; a model with none counts none.
 fn tokens(h: &History, o: &mut Out<'_>) {
     let (Some(usage), Some(role)) = (
         o.event.data.get("usage").and_then(Value::as_object),
@@ -262,13 +264,30 @@ fn tokens(h: &History, o: &mut Out<'_>) {
         .and_then(|e| text(&e.data, "effort"))
         .unwrap_or("unset");
     for (model, counts) in usage {
-        for kind_of_token in ["input", "output", "cache_read", "cache_creation"] {
-            let now = number(counts, kind_of_token).unwrap_or(0.0);
+        let added = |key: &str| {
+            let now = number(counts, key).unwrap_or(0.0);
             let was = before
                 .and_then(|u| u.get(model))
-                .and_then(|c| number(c, kind_of_token))
+                .and_then(|c| number(c, key))
                 .unwrap_or(0.0);
-            let added = (now - was).max(0.0);
+            (now - was).max(0.0)
+        };
+        let micro_usd = added("cost_micro_usd");
+        if micro_usd > 0.0 {
+            o.measure(
+                &defs::MEMBER_COST,
+                micro_usd / 1_000_000.0,
+                &[
+                    ("role", role.as_str()),
+                    ("kind", kind),
+                    ("model", model),
+                    ("effort", effort),
+                    ("task_class", class),
+                ],
+            );
+        }
+        for kind_of_token in ["input", "output", "cache_read", "cache_creation"] {
+            let added = added(kind_of_token);
             if added > 0.0 {
                 o.measure(
                     &defs::MEMBER_TOKENS,

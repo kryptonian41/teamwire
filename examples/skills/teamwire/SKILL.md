@@ -71,9 +71,9 @@ later ones for you, and `TEAM-COMPLETE` only means the current members
 stopped.
 
 1. Plan, run the planning check, and settle the questions with the user.
-2. Plan reviewer, when a wrong plan would waste more than one implementer's work.
+2. Plan reviewer, or a plan-reviewer set the user chose, when a wrong plan would waste more than one implementer's work.
 3. Launch, then start the watch.
-4. Waves, each through the planning check, until the last planned member reports.
+4. Waves, each through the planning check, until the last planned member reports. One review round reads each finished diff: one reviewer, or a reviewer set the user chose.
 5. Integrator, when branches join (`teamwire preset integrator`).
 6. Closer, always once code exists (`teamwire preset closer`), with a new watch.
 7. Triage the closer's findings, at most two fix rounds per owner, then `teamwire verify`.
@@ -105,20 +105,23 @@ orchestrated run costs more again. The sources for every rule and figure in
 this file are in `docs/research/2026-10-18-lead-field-reports.md` in the
 teamwire repository.
 
-`teamwire preset` lists the six team shapes and three steps added to a
-team. The `plan-review` step goes before the implementers, and the
-`integrator` and `closer` steps go after the last wave.
+`teamwire preset` lists the six team shapes and five steps added to a
+team. The `plan-review` and `plan-review-set` steps go before the
+implementers. The `review-set` step goes after the last implementer it
+reads, and the `integrator` and `closer` steps go after the last wave.
 `teamwire preset <name>` prints one preset's rules and a spec to fill in.
 
 | Shape | Use when |
 | --- | --- |
-| `implement-then-review` | The work is sequential, or members would need to see each other's decisions. One implementer writes all of it, one fresh reviewer reads the finished diff, then at most two fix rounds by the owner. Never a second review of the same diff. |
+| `implement-then-review` | The work is sequential, or members would need to see each other's decisions. One implementer writes all of it, and one review round reads the finished diff: one fresh reviewer, or one reviewer set. Then the owner gets at most two fix rounds. Never a second review round on the same diff. |
 | `parallel-tickets` | Tickets that touch different modules. The best case: no integration at all. |
 | `dependent-tickets` | Tickets with real blocking edges. Waves follow the edges, and the integrator merges blockers first. |
 | `survey` | Read-only investigation across several areas. |
 | `contract-split` | Last resort: one feature split across implementers. Expect bugs where the parts meet. |
 | `speckit` | One feature built with GitHub's spec-kit commands. A spec member writes the spec, the plan and `tasks.md`, a plan reviewer runs `analyze`, and one implementer runs `implement`. `teamwire speckit draft <tasks.md>` lists the files phases and stories share and drafts each story's `owns`. Read "Spec-kit features" in `reference.md` first. |
 | `plan-review` | The first step, when a wrong plan would waste more than one implementer's work. One fresh agent reads the plan and every brief and reports what a member could not act on. Run it alone, fix the briefs, then add the implementers. |
+| `plan-review-set` | The first step in place of `plan-review`, when the user chose a set. Two or three plan reviewers on different model families read the same plan once, and one reconciler joins their reports. "Sets: several model families on one judging job" says when to offer one. |
+| `review-set` | The review round in place of a single reviewer, when the user chose a set. Two or three reviewers on different model families read every implementer's finished diff once, and one reconciler writes one report with a section per owner. |
 | `integrator` | The step after the last wave of a shape that joins branches. One implementer merges the branches in the plan's order and runs the full gate. It decides nothing. |
 | `closer` | The last step of every team that wrote code. One agent verifies the team's claims and writes one report. |
 
@@ -247,7 +250,10 @@ place it has to guess is a place an implementer would guess too.
   `teamwire preset plan-review`, whose rules say what its task holds and how
   to read its report. Fix the briefs from its report. Then add the
   implementers with `teamwire launch --add`. Launch has no rule that orders
-  the two steps, so the order is yours to keep.
+  the two steps, so the order is yours to keep. When the user chose a
+  plan-reviewer set, the set takes the place of the plan reviewer, from
+  `teamwire preset plan-review-set`, and you fix the briefs from the
+  reconciler's report ("Sets: several model families on one judging job").
 - **Its findings.** Put each one in one of four groups:
   - **fix**: the finding holds, so edit the brief;
   - **contest**: the finding is wrong, and a file the reviewer could read
@@ -255,16 +261,21 @@ place it has to guess is a place an implementer would guess too.
   - **ask the user**: the finding is wrong, but the evidence is outside every
     file the reviewer could read, such as something the user said;
   - **decline**: the finding is a nit, so record it.
-- **Once per plan.** Fix the briefs once from the report, then add the
-  implementers. Never review the same plan twice. A reviewer asked again
-  finds something new each time, and the fixes grow without end.
+- **Once per plan.** One review round reads each plan: one plan reviewer, or
+  one plan-reviewer set. Fix the briefs once from the report, then add the
+  implementers. Never review the same plan twice, with one reviewer or with
+  a set. A reviewer asked again finds something new each time, and the
+  fixes grow without end.
 
 **Settle the open questions.** When the user is present, ask every question
 you would otherwise answer yourself, each with your recommended answer. Show
 one numbered entry per member: kind, task, blockers, owned files and wave.
 Ask about unclear acceptance criteria, a blocking edge that looks missing or
 spurious, each policy rule's example, and anything you would have to invent
-for a brief. Use the `grilling` skill if you have it. Launch once every
+for a brief. Ask whether the team uses a plan-reviewer set or a reviewer
+set, with your model picks and the estimated money, as the rules under
+"Sets: several model families on one judging job" say. A set is opt-in.
+Use the `grilling` skill if you have it. Launch once every
 question has an answer. With no user present, put each question in the
 affected brief under "Open questions you must not answer", and list them in
 your final report.
@@ -299,6 +310,7 @@ needs `mode`, as the last column shows.
 | `implementer` | Builds what its brief asks, with a test that fails without each change. Commits after each unit, with one progress line per commit. Says `done` only when its checks pass. | Edit files it does not own. Reformat code outside its task. Delete, skip or loosen a test or a check configuration, unless the brief says to. Fix a failing check more than twice. Run `git stash`, `git reset --hard` or `git checkout -- .`. Run `git worktree add`, `git worktree remove`, `git worktree move` or `git worktree prune`. | `worktree` (required) |
 | `reviewer` | Reads a finished diff against its brief. Reports ranked correctness, security and data-loss findings, each with file:line and a concrete failure. Looks for stubbed, empty or hard-coded code that makes a check pass. Give it the brief's path. A brief never offers it a worktree. It runs tests in its own clone. | Edit or commit anything. Propose fixes. Report style or naming. Run `git worktree add`, `git worktree remove`, `git worktree move` or `git worktree prune`. | `pane` |
 | `plan_reviewer` | Reads the plan, the team spec, every brief and the code they point at, before any implementer starts. For each brief it writes what the brief asks for, then reports ranked findings, each with the brief's file and line. Start from `teamwire preset plan-review`. | Edit or commit anything. Propose fixes. Send messages. Run `git worktree add`, `git worktree remove`, `git worktree move` or `git worktree prune`. | `pane` (launch refuses `worktree`) |
+| `reconciler` | Reads the reports of one set of readers, by path. Merges duplicate findings, checks each one in the code, and gives each a verdict: confirmed, not confirmed, or judgement. Writes one report with a section per owner and a table of who raised what. | Edit or commit anything. Propose fixes. Decide a judgement call. Send messages. Run `git worktree add`, `git worktree remove`, `git worktree move` or `git worktree prune`. | `pane` (launch refuses `worktree`) |
 | `investigator` | Answers a question from code, logs and data, and says what it ruled out. | Edit or commit anything. Run `git worktree add`, `git worktree remove`, `git worktree move` or `git worktree prune`. | `pane` |
 | `closer` | Takes `teamwire verify` as the evidence for each member's check, and runs each other claimed check once per commit. Runs the local gate its task names once on each head that ships, the joined head when one exists, in a clone of its own, runs none of the gates left to CI, and reports both. Takes each new test a member claims, and each fix of a finding that a reviewer reported and an owner fixed, reverts the fix, and confirms the test then fails. Names contradictions, grades each finding with its owner, and writes one integrated report. Start its task from `teamwire preset closer`. | Edit source, commit, or message any member. Run `git worktree add`, `git worktree remove`, `git worktree move` or `git worktree prune`. Use your checkout or a member's worktree. | `pane` |
 
@@ -308,7 +320,14 @@ reviewer in `worktree` mode. Every member is told that the brief is the
 agreed plan, to list any choice the brief does not cover under **Decisions I
 made**, and to record a question the brief marks open without answering it.
 Implementers and investigators talk only through `teamwire send`. Reviewers,
-plan reviewers and closers send nothing.
+plan reviewers, reconcilers and closers send nothing.
+
+The `quiet` setting makes a member of any kind quiet: with `"quiet": true`
+in its spec, the member sends no message, and only its own lead may message
+it. Reviewers, plan reviewers, reconcilers and closers are quiet by their
+kind, so launch refuses `"quiet": false` on one of them. A planner in a
+later planner set is an `investigator` with `"quiet": true`, so no planner
+reads another planner's plan before it writes its own.
 
 A member's `kind` sets its role. Its `task_class` says how hard its task is
 to reason about. The two are separate: a review of a one-line rename and a
@@ -343,7 +362,10 @@ and the model's family then sets the member's harness, in this order:
    from. Without `--harness`, the command lists your own harness. A
    `builtin` list comes from the harness's docs, so a model on it may still
    be out of reach for this account. A pi model can fail even on a `listed`
-   list, as "Setting up a machine" in `reference.md` explains.
+   list, as "Setting up a machine" in `reference.md` explains. The `family`
+   column names each model's family, such as `claude`, `gpt` or `gemini`,
+   or `unknown`. The family labels a model and warns about a set. It picks
+   nothing.
 2. **Set each member's `task_class`** from the table under "Roles".
 3. **Read the evidence for each class.** Run
    `teamwire models --for <class>` once per class in the plan. It adds the
@@ -390,6 +412,141 @@ agents' work or in reasoning about a race. A higher effort also makes slower
 turns, which use up a member's `deadline_s`. No measured source backs that
 reasoning yet, so check it against what `teamwire models --for` shows.
 
+## Sets: several model families on one judging job
+
+A set is two or three members that do the same judging job on the same
+brief, each on a model of a different family, such as Claude, GPT and
+Gemini. The members of a set never talk to each other. Each one is a
+**reader**. A `reconciler` then reads the readers' reports, checks each
+finding in the code, and writes the one report the next step acts on. A
+member joins a set through its `set` label: members with the same label in
+one team form one set. A set reads once, so a set is one review round with
+several readers side by side, not a second review.
+
+Two sets exist today. A **plan-reviewer set** takes the place of the single
+plan reviewer, from `teamwire preset plan-review-set`. A **reviewer set**
+takes the place of the single reviewer, from `teamwire preset review-set`.
+A planner set is a later step and has no preset yet.
+
+The evidence is modest. In one controlled study, two reviewers of different
+families found 56.7% of planted errors, and two of one family found 42.7%.
+The study could not tell the family apart from the reviewers' strength.
+Nobody has measured what a third reader adds. The sources are in
+`docs/research/2026-11-19-model-family-sets.md` in the teamwire repository.
+
+**The rules of every set.**
+
+1. A set is opt-in. With the user present, ask which set to use when you
+   settle the plan's questions. Recommend a set when the team has three or
+   more implementers, or when any member's class is `cross_cutting` or
+   `concurrency_data_loss`. In an away-from-keyboard run, use a set only
+   when the user's task text asks for one.
+2. Pick one model per family: the newest top-tier model of each family that
+   `teamwire models --harness claude-code` and `teamwire models --harness pi`
+   list. The `family` column says which family a model is. Use at least two
+   families, and three when a third is reachable. A set has at most three
+   readers. When more than three families are reachable, keep the three
+   whose top models have the strongest evidence in
+   `teamwire models --for judgement`, and say in the plan why.
+3. Say in the plan when a pick has no measured result for its seat in
+   `teamwire models --for judgement`. The user confirms or swaps each pick.
+4. Set each reader's `harness` from its model's family, as "Choose each
+   member's model" says, and set `effort` on every reader. A model called
+   with no effort setting can run below its best level.
+5. Show the user the estimated money for the readers that run through a
+   provider that bills each token, before the launch. teamwire has no
+   command that gives a model's tier, release date or price. Take them from
+   the provider's own pages or from what you know, and say in the plan
+   where each one came from.
+6. Give every reader the same brief, and no reader a special focus. A
+   reviewer with a special focus is a separate member outside the set.
+7. Launch the reconciler only after every reader has reported. Launch warns
+   when you do not.
+8. The reconciler reads the reports under role names. Do not tell it which
+   model wrote which report.
+9. Read the reconciler's summary and its "Questions for the parent". For a
+   reviewer set, send each owner one reprompt that names the reconciler's
+   report and the owner's section, "Findings for <role>". For a
+   plan-reviewer set, you are the owner. Read "Findings for the lead" and
+   the "Paraphrases" section, compare each paraphrase with what you meant,
+   and fix the briefs once. Do not read the readers' reports yourself.
+10. A set reads once. Never run a set, or a single reviewer, a second time
+    on the same diff or the same plan.
+11. When a reader cannot reach its model, carry on if two families remain.
+    Otherwise replace that reader once, under a new role name, with another
+    model of the same family. When the replacement fails too and one family
+    is left, no set runs. Tell the user, treat the one report as a single
+    review, and add no reconciler.
+12. For a reader on Claude Code, give the plugins map from "Skills and
+    plugins in members". A pi reader ignores that map, so check that the
+    user's pi setup has no memory feature that carries one reader's
+    findings to another.
+
+**The order of work for a plan-reviewer set.**
+
+1. Plan, run the planning check, and ask the user whether to use a set, with
+   your model picks and the estimated money.
+2. Write the plan, the team spec and every brief to files.
+3. Launch the readers alone from `teamwire preset plan-review-set`, with
+   `harness`, `model` and `effort` filled in on each, and start the watch.
+   Read each set warning launch prints.
+4. When every reader has reported, add the reconciler with
+   `teamwire launch --add`, and start a new watch.
+5. Read the reconciler's report as rule 9 says, and fix the briefs once.
+6. Add the implementers with `teamwire launch --add`.
+
+**The order of work for a reviewer set.**
+
+1. Settle the set with the user at the plan's questions, as for a
+   plan-reviewer set.
+2. Write one brief for the set. It lists one line per implementer: its
+   branch, its base and its brief. Every reader reads every diff in the
+   list against its brief. A team with one implementer has a list of one.
+3. When the last implementer the set reads has reported done, add the
+   readers from `teamwire preset review-set` with `teamwire launch --add`,
+   all in one spec file. Read each set warning launch prints.
+4. When every reader has reported, add the reconciler with
+   `teamwire launch --add`. Its task names the readers' report paths and
+   the roles that own code.
+5. Read the reconciler's report as rule 9 says, and send each owner its
+   section in one reprompt, all in one turn.
+6. Go on with "After the last wave": at most two fix rounds per owner,
+   `teamwire verify`, the integrator and the closer.
+
+A team that runs the same preset again, for another diff, renames the `set`
+label, all four roles and the report paths in the reconciler's task. Launch
+never uses a role twice in one team.
+
+This spec adds a reviewer set to the team `myteam`. The model ids are
+placeholders: fill in the ids that `teamwire models --harness <id>` prints.
+The three readers share one `task_file`, so their briefs are the same file.
+
+```json
+{
+  "team": "myteam",
+  "children": [
+    {"role": "reva", "title": "Review the diffs, reader a", "kind": "reviewer",
+     "set": "revset", "mode": "pane", "task_class": "judgement", "cwd": "/abs/path/repo",
+     "harness": "claude-code", "model": "<newest Claude model>", "effort": "<its highest level>",
+     "plugins": {"ponytail@ponytail": false, "mattpocock-skills@claude-plugins-official": false, "claude-mem@thedotmack": false},
+     "task_file": "/abs/path/briefs/review-set.md"},
+    {"role": "revb", "title": "Review the diffs, reader b", "kind": "reviewer",
+     "set": "revset", "mode": "pane", "task_class": "judgement", "cwd": "/abs/path/repo",
+     "harness": "pi", "model": "<provider>/<newest GPT model>", "effort": "<its highest level>",
+     "task_file": "/abs/path/briefs/review-set.md"},
+    {"role": "revc", "title": "Review the diffs, reader c", "kind": "reviewer",
+     "set": "revset", "mode": "pane", "task_class": "judgement", "cwd": "/abs/path/repo",
+     "harness": "pi", "model": "<provider>/<newest Gemini model>", "effort": "<its highest level>",
+     "task_file": "/abs/path/briefs/review-set.md"}
+  ]
+}
+```
+
+Once all three have reported, a second spec adds the reconciler `revjoin`
+with `"kind": "reconciler"`, `"set": "revset"`, `"mode": "pane"` and
+`"task_class": "judgement"`. Its task names the three report paths, such as
+`$TEAMWIRE_HOME/teams/myteam/reports/reva.md`, and the roles that own code.
+
 ## Skills and plugins in members
 
 Members load every user plugin, skill, hook and output style. Only the spec's
@@ -400,7 +557,8 @@ applies to Claude Code members. For a pi member, write the tdd and
 diagnosing-bugs sentences only when its harness has those skills, and check
 its harness for a memory feature that would carry one member's findings to
 another. Implementers keep the user's plugins. Give
-every Claude Code reviewer, plan reviewer, closer and investigator this map:
+every Claude Code reviewer, plan reviewer, reconciler, closer and
+investigator this map:
 
 ```json
 "plugins": {"ponytail@ponytail": false, "mattpocock-skills@claude-plugins-official": false, "claude-mem@thedotmack": false}
@@ -464,6 +622,13 @@ has a hyphen, and `lead` is reserved.
   removed. Later teams find this team's decisions by ref.
 - `context_handoff_tokens` sets the token count at which a member is told to
   hand off (see "When a member's context runs high").
+- `set` puts a member in a set of readers: members with the same label in
+  one team form one set, such as `"set": "revset"`. A label matches
+  `^[a-z][a-z0-9_]{0,15}$`. Launch stores the label, so a later `--add`
+  sees the set's earlier members, and prints a set warning for a set that
+  breaks a rule ("Launch warnings for a set" in `reference.md`).
+- `quiet`: `"quiet": true` makes a member of any kind send no message, as
+  "Roles" says.
 - `deadline_s` (default 1800) sets when `LATE` fires. `"dispatch": false`
   starts a member idle, for you to prompt. With `"accept_trust": false`,
   launch does not answer the folder-trust prompt, and it fails the member
@@ -633,7 +798,7 @@ with a full context decides worse. Spend your context on the design:
 - Pass work by path. A brief or a reprompt names files. Never paste a
   report, a diff or a log into a message.
 - Read a member's result file and the summary at the top of its report.
-  A reviewer, plan reviewer or closer cannot message you, so it writes its
+  A reviewer, plan reviewer, reconciler or closer cannot message you, so it writes its
   questions under the heading `Questions for the parent`, right after its
   summary. Look for that heading in every such report, and answer in the
   owner's reprompt or in your plan. Read further only when two members
@@ -747,8 +912,9 @@ let it decide a question itself.
 ### Messages
 
 Leads, implementers and investigators talk, within a team and across teams.
-Reviewers, plan reviewers and closers send nothing, and only their own lead
-may message them, so their look at the work stays fresh. teamwire enforces
+Reviewers, plan reviewers, reconcilers, closers and every member with
+`"quiet": true` send nothing, and only their own lead may message them, so
+their look at the work stays fresh. teamwire enforces
 every rule here.
 
 ```bash
@@ -891,6 +1057,8 @@ Remove a member once it can no longer be useful, with
 | investigator | Once the closer's findings on it are resolved. With no closer, once the members that may ask it questions have finished. |
 | implementer | Once `teamwire verify <team> --role <role>` passes and the closer's findings on it are resolved. |
 | reviewer, plan reviewer, closer | Once you have read its report and acted on it. |
+| reader of a set | Once the set's reconciler has reported. Launch still counts a reader that reported before you removed it, and the reconciler reads its report by path. |
+| reconciler | Once you have read its report and sent each owner its section. |
 | any member going the wrong way | At once, with `--unverified --stop`, then replace it. |
 
 A finished implementer whose verify is `FLAGGED` gets a waiver per flag,
@@ -987,7 +1155,8 @@ reads the document, runs `teamwire status` for each team and
 
 Start once the last planned member has reported. `TEAM-COMPLETE` after wave 1
 of a dependent set is not this point, and neither is an implementer finishing
-before its reviewer has run. You run none of the steps below yourself:
+before its review round has run. That round is one reviewer, or one reviewer
+set and its reconciler. You run none of the steps below yourself:
 members merge, build, test and push, and you judge what they report.
 
 1. **Add the integrator when branches join.** Parallel tickets each become
@@ -1050,9 +1219,9 @@ members merge, build, test and push, and you judge what they report.
    own branch, and answers with evidence where it does not. Even a one-line
    fix goes to its owner. Confirm each fix with
    `teamwire verify <team> --role <owner>`, then reprompt the integrator to
-   merge the new commits and run the full gate again. Allow one fresh review,
-   then at most two fix rounds by the owner, and never a second review of the
-   same diff. The round on pull request comments in step 6 comes once more
+   merge the new commits and run the full gate again. Allow one review
+   round, by one fresh reviewer or one reviewer set, then at most two fix
+   rounds by the owner, and never a second review round on the same diff. The round on pull request comments in step 6 comes once more
    on top of these, and only for bot and CI comments. Do not run the closer again, and do not hand the corrections to a
    fork of yourself. A fix round is the normal case, not a failure: about
    half of the reviewed implementers in teamwire's own runs got one. Tell the
@@ -1107,7 +1276,16 @@ you are not. `TEAM-COMPLETE` alone is not that signal. Closing after wave 1
 would archive the team before wave 2 could join it.
 
 Read each member's token use with `teamwire metrics <team>` before you
-close ("Other commands" in `reference.md` lists its labels).
+close ("Other commands" in `reference.md` lists its labels). A member whose
+harness records money, which today means pi, also gets one money line per
+model, in dollars to 4 places:
+
+```
+teamwire.member.cost{team=myteam,role=revb,kind=reviewer,model=<provider>/<model>,effort=high,task_class=judgement} 1.5878 usd
+```
+
+A Claude Code member gets no money line, so read a missing line as not
+recorded, never as zero.
 
 ```bash
 teamwire close <team> --dry-run    # print the plan
@@ -1156,6 +1334,7 @@ teams. "Close" in `reference.md` lists each step.
 ## Reference
 
 `reference.md`, next to this file, holds "Setting up a machine", "How it fits
-together", "Watch lines", "Messages", "Reopen", "Context handoff", "Lead
-handoff", "Verify flags", "Pull request lines", "Close" and "Other commands".
+together", "Watch lines", "Launch warnings for a set", "Messages", "Reopen",
+"Context handoff", "Lead handoff", "Verify flags", "Pull request lines",
+"Close" and "Other commands".
 Its first lines say when to read each.

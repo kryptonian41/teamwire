@@ -195,6 +195,36 @@ fn an_afk_team_is_marked_in_text_and_carries_its_budget_in_json() {
     assert_eq!(json["teams"][1]["name"], "beta", "the roster keys stay");
 }
 
+/// `quiet` in the JSON is the answer in effect, so a reader never needs to
+/// know which kinds are quiet: a reviewer shows true with a stored false.
+#[test]
+fn teams_json_says_who_is_quiet_in_effect_and_names_the_set() {
+    let rig = Rig::new();
+    let mut beta = Store::open(rig.home.path(), &TeamName::parse("beta").unwrap()).unwrap();
+    beta.write(|tx| tx.set_member_marks(&Role::parse("db").unwrap(), true, Some("rev1")))
+        .unwrap();
+    drop(beta);
+
+    let out = rig.run(&["teams", "--json"], None);
+    assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
+    let json: Value = serde_json::from_slice(&out.stdout).unwrap();
+    let api = &json["teams"][0]["members"][0];
+    let db = &json["teams"][1]["members"][0];
+    let rev = &json["teams"][1]["members"][1];
+    assert_eq!(
+        (&api["quiet"], &api["set"]),
+        (&Value::Bool(false), &Value::Null)
+    );
+    assert_eq!(
+        (&db["quiet"], &db["set"]),
+        (&Value::Bool(true), &Value::from("rev1"))
+    );
+    assert_eq!(
+        (&rev["quiet"], &rev["set"]),
+        (&Value::Bool(true), &Value::Null)
+    );
+}
+
 #[test]
 fn a_member_sends_to_another_team_and_the_copy_is_stored_there() {
     let rig = Rig::new();

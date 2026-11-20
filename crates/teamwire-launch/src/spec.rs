@@ -134,7 +134,7 @@ const TEAM_KEYS: [&str; 9] = [
 ];
 
 /// The keys `MemberSpec` reads. A test keeps this list equal to the type.
-const MEMBER_KEYS: [&str; 22] = [
+const MEMBER_KEYS: [&str; 24] = [
     "role",
     "title",
     "kind",
@@ -157,6 +157,8 @@ const MEMBER_KEYS: [&str; 22] = [
     "accept_trust",
     "plugins",
     "context_handoff_tokens",
+    "quiet",
+    "set",
 ];
 
 /// One warning per key the spec does not use, naming the role (or the team

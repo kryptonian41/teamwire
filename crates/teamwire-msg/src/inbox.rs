@@ -33,6 +33,10 @@ const EVERY: [DeliveryState; 5] = [
 /// false`, and a `store.error` event says so; it is not marked read, since
 /// the store cannot ack a message it cannot verify. A row that cannot be
 /// parsed at all is left out and recorded the same way.
+///
+/// A message the caller may not be shown, because it is quiet and the sender
+/// is not its own lead, is left out with or without `all`, and its row moves
+/// to `undelivered` with `recipient_not_allowed` (MSG-3).
 pub fn inbox(ctx: &mut Ctx<'_>, me: &Role, all: bool) -> Result<Vec<InboxItem>, SendError> {
     let now = ctx.clock.now();
     let recipient = Recipient::Member(me.clone());
@@ -40,6 +44,7 @@ pub fn inbox(ctx: &mut Ctx<'_>, me: &Role, all: bool) -> Result<Vec<InboxItem>, 
     Ok(ctx.store.write(|tx| {
         let reader = tx.reader();
         let found = reader.inbox(&recipient, states)?;
+        let mine = reader.member(me)?;
         for bad in &found.bad {
             tx.record_event(
                 now,
@@ -52,6 +57,10 @@ pub fn inbox(ctx: &mut Ctx<'_>, me: &Role, all: bool) -> Result<Vec<InboxItem>, 
         let mut items = Vec::with_capacity(found.items.len());
         for entry in found.items {
             let m = &entry.message;
+            if mine.as_ref().is_some_and(|me| !me.hears(&m.sender)) {
+                crate::quiet::withhold(tx, now, &entry.delivery.delivery)?;
+                continue;
+            }
             if !entry.hash_ok {
                 tx.record_event(
                     now,
@@ -91,18 +100,22 @@ pub fn inbox(ctx: &mut Ctx<'_>, me: &Role, all: bool) -> Result<Vec<InboxItem>, 
 }
 
 /// Marks messages read without returning them. An id that names no message,
-/// or a message that was not sent to the caller, is `unknown`; one already
-/// read is `already`.
+/// a message that was not sent to the caller, or one the caller may not be
+/// shown (MSG-3), is `unknown`; one already read is `already`.
 pub fn ack(ctx: &mut Ctx<'_>, me: &Role, ids: &[DisplayId]) -> Result<Vec<AckResult>, SendError> {
     let now = ctx.clock.now();
     let recipient = Recipient::Member(me.clone());
     Ok(ctx.store.write(|tx| {
         let reader = tx.reader();
+        let mine = reader.member(me)?;
         let mut out = Vec::with_capacity(ids.len());
         for id in ids {
             let acked = (|| {
                 Ok(match reader.message_by_display_id(id)? {
-                    Some(m) if reader.delivery(&m.ulid, &recipient)?.is_some() => {
+                    Some(m)
+                        if reader.delivery(&m.ulid, &recipient)?.is_some()
+                            && mine.as_ref().is_none_or(|me| me.hears(&m.sender)) =>
+                    {
                         if tx.ack_delivery(now, &m.ulid, &recipient)? {
                             AckOutcome::Acked
                         } else {

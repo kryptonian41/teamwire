@@ -70,7 +70,11 @@ LCH-5); a team or role name outside LCH-6 (no hyphens); an address
 `host_listing_failed`, a host whose live agent list cannot be read, so launch
 cannot tell whether the name is live; a title over 28
 characters or repeated; an implementer in
-`pane` mode; a home-directory `cwd`; a worktree member when git does not
+`pane` mode; a `plan_reviewer` or a `reconciler` in `worktree` mode
+(`plan_reviewer_needs_pane`, `reconciler_needs_pane`); `"quiet": false` on a
+kind that is quiet by nature (`quiet_cannot_be_unset`); a `set` label that
+does not match `^[a-z][a-z0-9_]{0,15}$` (`set_label_invalid`); a
+home-directory `cwd`; a worktree member when git does not
 ignore `.worktrees/` (`worktree_not_ignored`, LCH-10); a member whose host
 is `none` (v1 cannot start one); less than 200 MB free; a member whose harness
 program does not run (`<program> --version` fails), as `refused: member <role>:
@@ -87,7 +91,20 @@ Spec fields, per team: `team`, `title`, `setup`, `harness` (default: the lead's 
 `children`, `context_handoff_tokens`, `plugins`, `refs`. Per member: `role`, `title`, `kind`, `mode`, `repo`, `branch`,
 `base`, `cwd`, `model`, `effort`, `check`, `owns`, `task` or `task_file`,
 `deadline_s` (default 1800), `harness` (default: the lead's harness, so a member of a pi lead runs on pi), `setup`, `dispatch` (default true),
-`accept_trust` (default true), `context_handoff_tokens` (tokens, above zero; launch warns below 100,000, because a fresh Claude Code session already holds about 60,000), `plugins`.
+`accept_trust` (default true), `context_handoff_tokens` (tokens, above zero; launch warns below 100,000, because a fresh Claude Code session already holds about 60,000), `plugins`,
+`quiet`, `set`.
+`"quiet": true` makes a member of any kind quiet (MSG-3, ADR 0058): it may
+send no message, and only its own lead may message it. A reviewer, plan
+reviewer, reconciler and closer are quiet by their kind, so `"quiet": false`
+on one of them is refused. `"set": "rev1"` puts the member in the set `rev1`
+of its team (ADR 0057). Launch stores both with the member, in the `quiet`
+and `set_label` columns that schema version 13 adds (PRM-10), so a later
+`--add` reads the earlier members of a set. A member launched again after a
+failed start takes both from the new spec. `--dry-run` ends a member's line
+with `, quiet` when the spec sets `"quiet": true`, for any kind, and with
+`, set <label>` when it sets a label. A reviewer, plan reviewer, reconciler
+or closer whose spec has no `quiet` key shows no `, quiet`, although it is
+quiet by its kind.
 `plugins` is an object from a
 Claude plugin id `name@marketplace` to true or false. The team's map applies
 to every member of the same spec file, and a member's value wins per key
@@ -114,12 +131,41 @@ prints `would record refs ...` or `would append refs ...`, each ref as
 `provider:id`.
 
 Prints one line per member (`started`, `refused: <reason>`, `failed:
-<reason>`), the warnings of LCH-9 and LCH-18, a warning naming each file a
+<reason>`), the warnings of LCH-9, LCH-18 and LCH-34, a warning naming each file a
 member's setup created that launch added to `info/exclude` (LCH-24), and the
 watch command to run. Exit 2 when any member did not start (including when none started).
 When no member started, one more line follows `watch:`: `no member started;
 fix the cause and run teamwire launch --add --spec <spec>, or teamwire close
 <team>`. The team stays open.
+
+Launch and `--dry-run` also print the set warnings of LCH-34 on stderr, and
+never refuse for one. Each line is `warning: <code>: <text>`, for example
+`warning: set_too_small: set rev1 has one reader (reva); a set needs at least
+two`. A reader is a member with a `set` label that is not a `reconciler`. The
+rules read the members of the spec file and the members the team already
+holds. A stored reader that is `removed` or `failed` counts only when it
+reported before it left, so a replacement for a lost reader prints nothing. A
+rule about one member warns only for a member of the spec file, and a rule
+about two members only when one of them is in the spec file. Launch reads a
+reader's family with its harness (`Harness::model_family`), and a stored
+member's model from its newest `member.started` event. A team with no `set`
+label gets none of these warnings, except `set_reconciler_alone` for a
+reconciler with no label.
+
+| Code | When | Text |
+| --- | --- | --- |
+| `set_too_small` | A set has one reader. | `set <label> has one reader (<role>); a set needs at least two` |
+| `set_same_family` | Two readers of one set have the same known family. | `set <label>: <role> and <role> are both <family> models; a set needs a different family per reader` |
+| `set_family_unknown` | A reader names no model, or its family is `unknown`. | `set <label>: cannot tell the family of <role> (<model or "no model">); check it by eye` |
+| `set_mixed_kinds` | Two readers of one set differ in kind. | `set <label>: <role> is a <kind> and <role> is a <kind>; the readers of a set share one kind` |
+| `set_reader_not_quiet` | A reader is not quiet. | `set <label>: <role> may send messages; give it "quiet": true so the readers stay independent` |
+| `set_briefs_differ` | Two readers of one set, both in the spec file, have different brief text (`task_file` content or `task`). | `set <label>: <role> and <role> have different briefs; the readers of a set get the same brief` |
+| `set_reconciler_alone` | A `reconciler` has no set label, or a label that no reader carries. | `<role> is a reconciler with no set to read` |
+| `set_reconciler_early` | A `reconciler` is launched while a reader of its set is in the same spec file, or is in the team with no completion of its current generation. One line per such reader. | `<role> reconciles set <label>, but <role> has not reported; add the reconciler after every reader has reported` |
+
+A spec file that holds the readers and their reconciler, as a preset does,
+prints `set_reconciler_early` for each reader. Launch the reconciler with
+`--add` after every reader has reported.
 
 On an AFK team (ADR 0025), `--add` accepts a team that has no members yet.
 Past the team's budget, each new `implementer` prints `<role>: refused:
@@ -130,7 +176,7 @@ model or effort is below the AFK table, and never refuses for it:
 `warning: AFK run: member <role> (<kind>) runs on <model|the default model>
 at <effort|the default effort>, below the AFK table (<model> at <effort>)`.
 The table is `implementer` and `investigator` on `opus` at `high`, `reviewer`,
-`plan_reviewer` and `closer` on `opus` at `xhigh`. Models order `haiku < sonnet < opus` and
+`plan_reviewer`, `reconciler` and `closer` on `opus` at `xhigh`. Models order `haiku < sonnet < opus` and
 efforts `low < medium < high < xhigh < max`. A model name outside that list
 gets no warning.
 
@@ -765,8 +811,9 @@ set to a non-empty value, and whose `TEAMWIRE_USER_KEY` equals the key in
 `<home>/user.key` (see `teamwire user-key`). Anything else is
 `refused.identity`, exit 1. The user sends `reprompt` or `note` to an
 implementer or investigator, and `note` to `lead`; every other type is
-`refused.type_not_allowed`, and a reviewer, closer, plan reviewer, a reprompt
-to the lead or `role@team` is `refused.recipient_not_allowed`. The user's note
+`refused.type_not_allowed`, and a reviewer, closer, plan reviewer,
+reconciler, a member whose spec set `quiet`, a reprompt to the lead or
+`role@team` is `refused.recipient_not_allowed`. The user's note
 to the lead goes as its own message: a message that names `lead` together
 with a member is `refused.recipient_not_allowed` too, with the text "send it
 with --to lead alone". Each message
@@ -828,7 +875,13 @@ missing, and never types a line that team already handed off. Exit codes as
 for `send`. A message held for a handoff is not resent: with no other
 recipient to retry, the command exits 1 with `refused.not_resendable: <id> ->
 <role>: held for handoff; run teamwire handoff <team> --role <role>, or
-reprompt <role>`.
+reprompt <role>`. A row that is `undelivered` with `recipient_not_allowed` is
+not resent either: its recipient became quiet after the message was stored,
+and hears only its own lead (MSG-3). With no other recipient to retry, the
+command exits 1 with `refused.not_resendable: <id> -> <role>: the recipient
+is quiet and hears only its own lead`. A resend of any other row to such a
+recipient types nothing and records the row `undelivered` with
+`recipient_not_allowed`.
 
 ### `teamwire user-key`
 
@@ -873,7 +926,8 @@ Every message with its time, type, sender, recipients, a 300-character
 excerpt and each recipient's delivery state. `--role` takes the same address as
 `send --to`: `<role>`, `lead`, `<role>@<team>` or `lead@<team>`. It shows
 messages to or from that address; `lead` lists messages to or from the lead. A
-member's view stays its own messages.
+member's view stays its own messages. A quiet member's view leaves out every
+message it received from anyone but its own lead (MSG-3).
 
 Each `--json` row also carries `re`, the display id of the message it answers
 (`null` when it answers none), and `commit`, the commit a `notice` names
@@ -1098,9 +1152,10 @@ line into the session, as `teamwire_watch` does. The package refuses
 
 ### `teamwire preset [NAME]`
 
-Without a name, lists the six team shapes and the three steps added to a
-team. The `plan-review` step goes before the implementers, and the
-`integrator` and `closer` steps go after the last wave. With a name, prints
+Without a name, lists the six team shapes and the five steps added to a
+team. The `plan-review` and `plan-review-set` steps go before the
+implementers. The `review-set` step goes after the last implementer it
+reads, and the `integrator` and `closer` steps go after the last wave. With a name, prints
 the preset's spec skeleton and its rules as text. Each `setup` in a
 skeleton starts with
 `echo 'CHANGEME: fill in the worktree setup command' >&2; false`. It fails
@@ -1226,8 +1281,16 @@ reaches on this machine. `builtin` means the adapter carries a fixed list
 from the harness's docs, so a model on it may still be out of reach for
 this account. Then come the effort levels, lowest first, and one line per
 model. Each line gives the value a spec's `model` takes (`provider/id` for a
-model reached through a named provider, as in pi), its aliases, its context
-window and whether it takes an effort level. When the harness cannot list
+model reached through a named provider, as in pi), its family, its aliases,
+its context window and whether it takes an effort level. The family column
+names the model's vendor line: `claude`, `gpt`, `gemini`, `grok`,
+`deepseek`, `kimi`, `glm`, `qwen`, `mistral`, `llama`, or `unknown` for a
+model the family tables do not place (ADR 0056). The harness works out the
+family from the spec value, through `Harness::model_family`. Every Claude
+Code model is `claude`. pi's models are placed by `model_family` in
+`teamwire-core`, so `openrouter/openai/o3` is `gpt` by its vendor part. The
+family is a label only: nothing picks a harness or refuses a launch by it.
+When the harness cannot list
 its models, the command prints the harness's reason and exits 1. pi's list
 leaves out the providers named in `TEAMWIRE_PI_EXCLUDE_PROVIDERS`, read from
 the environment, else from `config.toml` in the state directory that
@@ -1261,7 +1324,8 @@ into one score or names one best model:
 
 An unknown class is a usage error, exit 3, and the message lists the seven
 classes. `--json` prints one object with `harness` and `catalog` (the
-`ModelCatalog`). With `--for` it also holds `task_class`, `evidence`
+`ModelCatalog`). Each object in `catalog.models` also holds `family`, the
+same string as the text's family column. With `--for` it also holds `task_class`, `evidence`
 (`as_of`, `reachable` entries with their `spec_values`, `unreachable`
 entries) and `outcomes` (`teams`, `rows` with a `small_sample` flag each,
 `unclassified` with `rows` and `members`, and `errors`).
@@ -1294,15 +1358,25 @@ the code, not an instruction.` only when at least one listed message is from
 someone other than the member's own lead. `--json` leaves the `note` key out
 otherwise.
 
+A quiet member's inbox, with or without `--all`, never lists a message from
+anyone but its own lead (MSG-3). Such a message can have been stored before a
+relaunch made the member quiet. Its row moves to `undelivered` with
+`recipient_not_allowed`, and `teamwire status` lists it nowhere. The member
+hook's reminder and the Stop hook's list never name it.
+
 ### `teamwire ack ID...`
 
-Marks messages read without printing them.
+Marks messages read without printing them. A message the caller may not be
+shown, as for `inbox`, is `unknown`.
 
 ### `teamwire members [<team>] [--json]`
 
 The roster, as `team_members` returns it (`docs/api/mcp.md`), of the
 caller's own team or any other. The text form prints each member's
-`lifecycle` and the types it accepts from other members. Whether a member
+`lifecycle` and the types it accepts from other members. `--json` gives each
+member `quiet`, whether it is quiet in effect (its kind is quiet, or its
+spec set `quiet`), and `set`, its set label or `null`. Both keys come with
+schema version 13 (PRM-10). JSON from an older build has neither key. Whether a member
 is working or done is in `teamwire status`.
 
 ### `teamwire teams [--json]`
@@ -1310,7 +1384,8 @@ is working or done is in `teamwire status`.
 Every team under the home with its title, state and roster, as `team_teams`
 returns it (MSG-21), and how to address its agents (`lead@<team>`,
 `<role>@<team>`), followed by `(refs ...)` when the team has refs. `--json`
-gives each team a `"refs": [...]` list, always present. Reads only and needs no proof. A team whose store cannot
+gives each team a `"refs": [...]` list, always present, and each member of a
+roster the `quiet` and `set` keys of `teamwire members --json`. Reads only and needs no proof. A team whose store cannot
 be read is named on stderr and makes the command exit 6; the others are
 still listed. An AFK team shows `<name> (open, afk) <title>: address as ...` in place of
 `(open)`, and `--json` gives each element of `teams` an `afk_budget_ends_at`
@@ -1392,7 +1467,7 @@ and still exits 0.
 | `teamwire doctor [--base REF]` | Read-only checks: `quick_check` on each team database, schema versions (a team at an older schema passes, with a note that the next write migrates it), free disk (a failure below 200 MB, the same floor as launch), network filesystem, stale close locks (a lock is stale when its pid is gone or now belongs to a process that started at another time) and watch leases (stale when the pid is gone, or alive with a heartbeat over 600 s old), herdr's session hook present, `.worktrees/` ignored in the current repo, harness and host binaries on `PATH`, `claude --version` and `claude --help` (a warning when the help lacks any of `--session-id`, `--resume`, `--permission-mode`, `--append-system-prompt-file`, `--settings`, `--mcp-config`, `--model`, `--effort`), the host's version (`herdr --version` or `tmux -V`; a probe that fails or takes over 5 s is a warning), a warning naming, never showing, any of `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_USE_BEDROCK` or `CLAUDE_CODE_USE_VERTEX` that is set (each overrides the stored login for every member), a warning per open team with a member that another teamwire build started, a per-team check `team <team> counters` that fails when a message counter is below the largest id in use or its counter row is missing (`counter <name> is missing but <n> is in use`), and prints the SQL statement that repairs it (doctor never runs the repair), the teamwire plugin installed at user scope, enabled, and with the files Claude Code loads matching this binary (not compared when this binary is a build under `target/`), a failure for a leftover ADR 0012 skill or MCP entry (`old lead setup`), and a warning for a local- or project-scope `teamwire` entry in the current directory, which Claude Code starts as a second server beside the plugin's. A plugin whose files match what this binary renders for the home it was installed for, but whose home differs from this run's, is a warning and gives no `teamwire install` advice: `warn teamwire plugin: installed for state directory <A>; this run uses <B>` (`<A>` reads `~/.teamwire (the default)` for a plugin installed for the default directory). Any other difference stays a failure. Doctor also prints a host line, for herdr and tmux, with the reason for the pick: `ok   host: herdr (HERDR_ENV is 1)`, `host: tmux (TMUX is set)`, `host: tmux (both HERDR_ENV and TMUX are set; the nearest parent is tmux)` or `host: herdr (both HERDR_ENV and TMUX are set; no parent is tmux or herdr, so herdr first)`. With no host the old line stays. Exit 0 when all pass, 2 otherwise. When `pi` is on PATH, doctor also lists a `pi on PATH` line with its version, and checks the pi lead package (`pi lead package`): not listed in pi's `settings.json` is ok and names `teamwire install --harness pi`, files at `$TEAMWIRE_HOME/pi-package/` that are not this binary's (not compared for a build under `target/`) are a warning. `--base REF` (default `HEAD`) names the commit members start from; it changes only the spec-kit lines. Inside a git repository (the nearest folder at or above the current one that holds `.git`) whose root holds `.specify/` on disk, or whose `--base` commit holds it, doctor also prints nine spec-kit lines after `.worktrees ignored`. Each is `ok` or a warning, never a failure. Each names the ref and its short commit id as `in <ref> (<sha7>)`, and each warning names the file and one action, ending `then commit on <ref>` where a commit is needed. A worktree is cut from a commit, so the lines read files from that commit (`git rev-parse`, `git ls-tree`, `git show`), never from git's index or the disk, except where a line below says so. The lines: `spec-kit version` (the `version` in the committed `.specify/integration.json`; ok on the 1.3 line, naming the tested release 1.3.3.dev0, spec-kit commit c438494; a warning outside it, with the action to run `specify integration upgrade <key>` with spec-kit 1.3 installed), `spec-kit committed` (compares the disk with the commit, by design: each file of `.specify/` and each `speckit-` entry of `.claude/skills/` and `.pi/prompts/` that is on disk but not in the commit, named as changed, new, untracked, or git-ignored with the rule and its file; the feature pointer and what spec-kit's own `.specify/.gitignore` ignores are left out; the action removes each ignore rule and names the exact `git add`, with the edited ignore file; when `<ref>` is not the checked-out branch, it ends `run git switch <ref> and commit there, or commit here and merge this branch into <ref>`), `spec-kit constitution` (the committed constitution holds no template placeholder such as `[PROJECT_NAME]`; the line says when the copy on disk differs), `spec-kit integrations` (lists the committed `integration.json`'s `installed_integrations` and its older `default_integration` and `integration` keys, and warns for each one whose command folder has no `speckit-` entry in the commit: `claude` `.claude/skills/speckit-*`, `pi` `.pi/prompts/speckit.*.md`; a folder on disk but not committed points at `spec-kit committed`; a broken file gets `delete it, run specify integration install <key> for each integration members use`), `spec-kit git extension` (a warning when the committed `.specify/extensions.yml` lists `git` under `installed:`, as an id or a mapping with an `id`, in any YAML form `PyYAML` reads that doctor's reader knows; action `specify extension remove git`), `spec-kit hooks` (a warning for each hook in the committed `extensions.yml` with `optional: false`, not `enabled: false` and no `condition`, of an extension other than `git`, since every spec-kit command file says the agent MUST run it; it names the extension, command and event, and the action is to read what it runs, then `specify extension remove <id>` or set `optional: true`), `spec-kit events` (a warning only for hooks spec-kit really wrote in the commit: a `.claude/settings.json` hook tagged `"__speckit_event__": true`, `.specify/events.py`; a manifest that declares `events:` while spec-kit wrote no hook is ok, with a note; the action names `specify extension remove <id>`, `specify extension disable <id>` or `specify integration upgrade <key> --force --integration-options="--events false"`), `spec-kit feature pointer` (asks `git check-ignore --no-index` on the working tree whether `.specify/feature.json` is ignored; a pointer tracked in the commit gets `git rm --cached .specify/feature.json`) and `spec-kit workflows` (always ok; lists the workflow ids in the committed `.specify/workflows/workflow-registry.json` and says teamwire starts none of them). A `--base` that git cannot resolve, or a git that refuses the repository, gives one `spec-kit base` warning that quotes git's first stderr line, and no other spec-kit line. Any other git error is quoted as git said it; "not in" the commit is said only when `ls-tree` does not list the path. An `extensions.yml` the reader cannot read (an anchor, a tag, an unclosed list) is a warning that says to check the file by hand, never ok. No spec-kit line is a `FAIL`, so none of them refuses `teamwire afk start`, which runs these checks with `HEAD`. AFK with spec-kit runs only from a `spec.md`, `plan.md` and `tasks.md` the user already reviewed. Doctor reads these files and asks git; it never runs `specify`. Outside such a repository it prints none of these lines. |
 | `teamwire install [--dry-run] [--force] [--harness ID[,ID]]` | Installs the teamwire plugin `teamwire@teamwire` (ADR 0018): writes a local marketplace to `$TEAMWIRE_HOME/claude-plugin/` holding the skills (`skills/teamwire/SKILL.md`, `skills/teamwire/reference.md` and `skills/afk/SKILL.md`, which Claude Code lists as `/teamwire:afk`), the lead's MCP server `<this binary> [--home DIR] mcp --lead` the lead's Stop hook `<this binary> [--home DIR] hook claude-lead-stop`, and the lead's tool hook `<this binary> [--home DIR] hook lead-tool --harness claude-code` on `PostToolUse` for every tool call (ADR 0035, ADR 0043), then registers it at user scope through `claude plugin marketplace add|update` and `claude plugin install|update|enable`. The plugin's version is a hash of its files, all three skill files included, so a new binary or skill is a new version. Then removes an ADR 0012 setup: the stamped skill under `<claude dir>/skills/teamwire/` and the user MCP entry `teamwire` (through `claude mcp remove`). Skips what is already current. Refuses, before any change, a skill edited by hand, an MCP entry named `teamwire` that is not the lead's server, a marketplace named `teamwire` from another source, a binary inside a `target/` directory, and a `claude` whose `plugin` command does not run; `--force` passes the first four. A foreign MCP entry is described with secret flag values (`--token X`, `--token=X`) hidden and URLs printed without user info or query. Exit 0 when done or when nothing needed a change, 1 when refused or when a change failed before anything was changed, 2 when a change failed after another was made (the message lists what was done; run it again). `--harness` names the harnesses to install for (`claude-code`, `pi`). A name that is not on PATH is refused with exit 1, and an unknown name is a usage error, exit 3. Without it, a terminal gets a numbered selector of the harnesses found on PATH, all selected by default, and a script without a terminal gets `claude-code`. For pi, install writes the lead package to `$TEAMWIRE_HOME/pi-package/` (the lead extension, which registers `mcp --lead`, runs `hook lead-stop --harness pi`, `hook lead-tool --harness pi` and the `teamwire_watch` tool; the skill with its pi part; `reference.md`) and lists it with `pi install <dir>`, run with `PI_OFFLINE=1`, only when pi's `settings.json` does not list it yet (ADR 0030). pi loads the folder in place, so changed files need no second `pi install`; install prints that open pi sessions see the change after a restart. |
 | `teamwire uninstall [--dry-run] [--force]` | Runs `claude plugin uninstall` and `claude plugin marketplace remove`, deletes `$TEAMWIRE_HOME/claude-plugin/` (the whole plugin directory, all three skill files), and removes an ADR 0012 skill and MCP entry with the same refusals as `install`; `--force` removes an edited skill, a foreign entry, or a marketplace named `teamwire` from another source anyway. A binary under `target/` may uninstall. Exit codes as for `install`. `claude plugin uninstall` leaves the plugin's cache folder on disk, which is Claude Code's behaviour: Claude Code keeps it at `<claude dir>/plugins/cache/teamwire/teamwire/<version>/`, one folder per installed version. `uninstall` does not delete it. When `pi` is on PATH, it also runs `pi remove <dir>` for a listed lead package and deletes `$TEAMWIRE_HOME/pi-package/`. |
-| `teamwire export <team> [--out FILE]` | Every record as JSON lines with CloudEvents-style names (STO-14). From a member session the lead's session id is left out: `team.lead_session` and the `old_session` and `new_session` of every `team.lead_adopted` event are null. |
-| `teamwire metrics [<team>] [--since DURATION] [--json]` | Local metrics from the event rows (`docs/metrics.md`). With a team name, a team that is closed is read from its newest archive under `$TEAMWIRE_HOME/archive/`; a team never seen is refused. `teamwire.member.tokens` lines cover Claude Code and pi members alike; what each harness reports is in `docs/metrics.md`. When the named team's store cannot be read (for example a schema newer than this binary), it prints the error and exits 6; without a team, an unreadable team is a warning and the exit stays 0. |
+| `teamwire export <team> [--out FILE]` | Every record as JSON lines with CloudEvents-style names (STO-14). A member record carries `quiet`, whether the member is quiet in effect, and `set`, its set label or `null`. From a member session the lead's session id is left out: `team.lead_session` and the `old_session` and `new_session` of every `team.lead_adopted` event are null. |
+| `teamwire metrics [<team>] [--since DURATION] [--json]` | Local metrics from the event rows (`docs/metrics.md`). With a team name, a team that is closed is read from its newest archive under `$TEAMWIRE_HOME/archive/`; a team never seen is refused. `teamwire.member.tokens` lines cover Claude Code and pi members alike; what each harness reports is in `docs/metrics.md`. A `teamwire.member.cost` line gives the dollars a member's harness recorded, per model, to exactly 4 decimal places, such as `teamwire.member.cost{team=alpha,role=readb,kind=reviewer,model=openai/gpt-6.2-astra,effort=high,task_class=judgement} 1.5878 usd`. Only pi records money: a Claude Code member, and a model whose total is 0, gets no such line, and a missing line means "not recorded". When the named team's store cannot be read (for example a schema newer than this binary), it prints the error and exits 6; without a team, an unreadable team is a warning and the exit stays 0. |
 | `teamwire metrics export [--once]` | Sends events after the export mark to the OTLP endpoint, then moves the mark. A batch stops before the first unsent event whose 60-second bucket has not ended, so each bucket is sent as one point (ADR 0005); events of the current minute go in a later export. Without `--once` it repeats every 60 s until stopped; with `--once` it makes one pass and exits. When export is off it exits 0 at once. It also exits 0 when one team's store cannot be opened; that is intended, so one damaged team cannot stop the repeating exporter. |
 | `teamwire version` | Binary version, as `<crate version>+<12 hex commit>` (or `+unknown` when the build found no git commit), and the schema version it writes. |

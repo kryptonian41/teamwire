@@ -149,11 +149,13 @@ const RAW_PLAN_REVIEWER: &str = "INSERT INTO members (role, title, kind, mode, h
     'started', 1, '2026-10-01T00:00:05.000Z')";
 
 /// Version 10 adds ticket refs after this step, version 11 the
-/// `member.woken` event type (ADR 0043), and version 12 the three dialog
-/// event types (ADR 0052), so a store opened here ends at version 12.
+/// `member.woken` event type (ADR 0043), version 12 the three dialog event
+/// types (ADR 0052), and version 13 the `reconciler` kind with the `quiet`
+/// and `set_label` columns of `members`, so a store opened here ends at
+/// version 13.
 #[test]
-fn this_build_is_at_schema_version_12() {
-    assert_eq!(SCHEMA_VERSION, 12);
+fn this_build_is_at_schema_version_13() {
+    assert_eq!(SCHEMA_VERSION, 13);
 }
 
 #[test]
@@ -190,7 +192,23 @@ fn a_version_8_database_keeps_every_member_and_every_row_that_names_one() {
     assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
     drop(store);
 
-    assert_eq!(snapshot(&path), before);
+    // Version 13 adds two columns to `members`, after every older one. Each
+    // row keeps its version 8 values in order, and takes the two defaults.
+    let after = snapshot(&path);
+    let (members_before, others_before) = before.split_first().unwrap();
+    let (members_after, others_after) = after.split_first().unwrap();
+    assert_eq!(others_after, others_before);
+    assert_eq!(members_after.len(), members_before.len());
+    for (row_after, row_before) in members_after.iter().zip(members_before) {
+        assert_eq!(
+            row_after.get(..row_before.len()),
+            Some(row_before.as_slice())
+        );
+        assert_eq!(
+            row_after.get(row_before.len()..),
+            Some([Value::Integer(0), Value::Null].as_slice())
+        );
+    }
     assert_eq!(leftovers(&path), 0);
 }
 
@@ -365,6 +383,7 @@ fn a_completion_that_names_no_member_fails_the_open_and_keeps_version_8() {
 
 /// The rebuilt table has the old table's columns, each with its type,
 /// NOT NULL, default and place in the primary key, and stays STRICT.
+/// Version 13 adds exactly two columns after them, `quiet` and `set_label`.
 #[test]
 fn every_column_of_members_is_the_same_after_the_step() {
     let home = TestHome::new().unwrap();
@@ -376,8 +395,31 @@ fn every_column_of_members_is_the_same_after_the_step() {
 
     drop(Store::open(home.path(), &team()).unwrap());
 
-    assert_eq!(rows(&path, "pragma_table_xinfo('members')", "cid"), columns);
-    assert_eq!(rows(&path, "pragma_table_list('members')", "name"), table);
+    let after = rows(&path, "pragma_table_xinfo('members')", "cid");
+    assert_eq!(after.get(..columns.len()), Some(columns.as_slice()));
+    let added: Vec<Option<&Value>> = after
+        .iter()
+        .skip(columns.len())
+        .map(|column| column.get(1))
+        .collect();
+    assert_eq!(
+        added,
+        [
+            Some(&Value::Text("quiet".to_owned())),
+            Some(&Value::Text("set_label".to_owned()))
+        ]
+    );
+    // `pragma_table_list` holds schema, name, type, ncol, wr and strict:
+    // only the column count, `ncol`, may change, and by exactly two.
+    let mut grown = table.clone();
+    let ncol = grown.first_mut().and_then(|row| row.get_mut(3)).unwrap();
+    let count = if let Value::Integer(n) = ncol {
+        Some(*n)
+    } else {
+        None
+    };
+    *ncol = Value::Integer(count.unwrap() + 2);
+    assert_eq!(rows(&path, "pragma_table_list('members')", "name"), grown);
 }
 
 /// A member row that every CHECK of `members` takes.

@@ -164,12 +164,20 @@ fn launch_member(
     };
     // `task_class` is `null` when the spec sets none, so a reader of
     // `member.creating` can tell an unclassed member from a missing key.
-    let extra = json!({
+    // `quiet` and `set` appear only when the spec sets them, so the events
+    // of every other member stay as they were.
+    let mut extra = json!({
         "launch": launch_id,
         "requested": requested,
         "dispatch": m.spec.dispatch,
         "task_class": m.spec.task_class,
     });
+    if m.spec.quiet == Some(true) {
+        put(&mut extra, "quiet", json!(true));
+    }
+    if let Some(set) = &m.spec.set {
+        put(&mut extra, "set", json!(set));
+    }
     let result = run_member(ctx, plan, dirs, m, &extra, &mut made, &mut steps, warnings);
     match result {
         Ok(()) => LaunchOutcome::Started,
@@ -349,6 +357,9 @@ fn run_member(
             } else {
                 tx.insert_member_with(at, &new, extra)?;
             }
+            // Written on both paths, so a relaunched member takes the new
+            // spec's marks and never keeps the failed row's.
+            tx.set_member_marks(role, m.spec.quiet.unwrap_or(false), m.spec.set.as_deref())?;
             tx.set_member_token_hash(role, &hash)
         },
     )?;

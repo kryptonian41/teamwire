@@ -10,14 +10,18 @@ export interface Outcome {
   text: string;
 }
 
-/** Plan D4: the user messages implementers and investigators. Reviewers, closers and plan reviewers stay lead-only. */
-export function canMessage(kind: MemberKind | null): boolean {
-  return kind === "implementer" || kind === "investigator";
+/**
+ * Plan D4: the user messages implementers and investigators. Reviewers, closers, plan reviewers
+ * and reconcilers stay lead-only, and so does a member of any kind whose roster entry says
+ * `quiet`. The kind check stays for an older teamwire, whose roster has no `quiet`.
+ */
+export function canMessage(kind: MemberKind | null, quiet: boolean): boolean {
+  return !quiet && (kind === "implementer" || kind === "investigator");
 }
 
 /** The CLI starts a new generation only for a member that is running (`creating` or `started` in the roster). Null: no roster entry. */
-export function canReprompt(kind: MemberKind | null, lifecycle: Lifecycle | null): boolean {
-  return canMessage(kind) && (lifecycle === "creating" || lifecycle === "started");
+export function canReprompt(kind: MemberKind | null, lifecycle: Lifecycle | null, quiet: boolean): boolean {
+  return canMessage(kind, quiet) && (lifecycle === "creating" || lifecycle === "started");
 }
 
 /** The CLI's own words: stderr, or stdout when stderr is empty. */
@@ -55,10 +59,18 @@ export function sendOutcome(r: ActionResult, team: string): Outcome {
 /** Plan D11: a reply note starts with the question's id. */
 export const replyPrefix = (questionId: string) => `re ${questionId}: `;
 
-/** The role a "Reply with a note" goes to, or null when plan D11 does not offer one for this asker. */
-export function replyTarget(asker: string, members: readonly { role: string; kind: MemberKind | null }[]): string | null {
+/**
+ * The role a "Reply with a note" goes to, or null when plan D11 does not offer one for this asker.
+ * A quiet member can still have an unanswered question from an earlier launch that failed before
+ * it started, so `joinTeam` copies the roster's `quiet` onto each member. A missing `quiet` reads
+ * as not quiet, and the kind still decides.
+ */
+export function replyTarget(
+  asker: string,
+  members: readonly { role: string; kind: MemberKind | null; quiet?: boolean }[],
+): string | null {
   const m = members.find((x) => x.role === asker);
-  return m && canMessage(m.kind) ? m.role : null;
+  return m && canMessage(m.kind, m.quiet ?? false) ? m.role : null;
 }
 
 export function leadNoteLines(notes: readonly LeadNote[]): string[] {

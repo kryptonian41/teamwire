@@ -37,7 +37,7 @@ each message whole (ADR 0059). A refused or failed call returns
 | --- | --- | --- |
 | `refused.identity` | Token or lead session does not match, or the team has no database. A closed team has none, because close deletes its state after archiving it; the message then says so, and is the same for every team. For the lead, the message also says when no harness session id reached the server at all | no |
 | `refused.type_not_allowed` | This kind of member may not send this type | no |
-| `refused.recipient_not_allowed` | This recipient may not receive this type from you (reviewer, plan reviewer, closer, answer not to asker, a `reprompt` or `note` to another team, the user's message to the lead and a member together) | no |
+| `refused.recipient_not_allowed` | This recipient may not receive this type from you (reviewer, plan reviewer, reconciler, closer, a member whose spec set `quiet`, answer not to asker, a `reprompt` or `note` to another team, the user's message to the lead and a member together) | no |
 | `refused.unknown_recipient` | No such member | no |
 | `refused.other_repo` | `team_decisions` `of` names a team that worked in no repository the caller's team works in. The message says the CLI can read it | no |
 | `refused.unknown_team` | `role@team` or `of` names a team with no database | no |
@@ -159,7 +159,9 @@ Return unread messages for the caller, oldest first, and mark them `acked`.
 Members only: the lead's call is refused with `invalid.argument`.
 
 Input: `{"all": false}`. With `all: true` it also returns read messages and
-marks nothing.
+marks nothing. A quiet member is never returned a message from anyone but its
+own lead, also one stored before a relaunch made it quiet (MSG-3); see
+`teamwire inbox` in `docs/api/cli.md`.
 
 Output:
 
@@ -238,9 +240,9 @@ session id is what a member would need to speak as the lead. The text reads
 Who is on the team. Input: `{"of": "billing"}` (optional) reads another
 team's roster instead; the caller is still proven in its own team. Output
 per member: `role`, `title`, `kind`,
-`lifecycle`, `generation`, `owns`, `accepts_from_members`, and
-`can_be_typed_to` (whether it can be woken by typing). No places, tokens or
-session ids. The text names each member as
+`lifecycle`, `generation`, `owns`, `accepts_from_members`,
+`can_be_typed_to` (whether it can be woken by typing), `quiet` and `set`. No
+places, tokens or session ids. The text names each member as
 `api (implementer, started, generation 4)`.
 
 - `lifecycle` is the stored member record: `creating`, `started`, `failed`
@@ -248,9 +250,17 @@ session ids. The text names each member as
   member is working, quiet or done is the `state` of `team_status`.
 - `accepts_from_members` lists the types this member accepts from another
   member, of its own team or another. Every member also accepts its own
-  lead's `note` and `reprompt`, which the list leaves out. A reviewer, plan
-  reviewer or closer has an empty list, because it accepts messages only
-  from its own lead.
+  lead's `note` and `reprompt`, which the list leaves out. A quiet member
+  has an empty list, because it accepts messages only from its own lead.
+- `quiet` says whether the member is quiet in effect (MSG-3): its kind is
+  `reviewer`, `plan_reviewer`, `reconciler` or `closer`, or its spec set
+  `"quiet": true` (ADR 0058). A reviewer shows `true`, so a reader never
+  needs to know which kinds are quiet. The key comes with schema version 13
+  (PRM-10). A roster from an older build has no `quiet` key; read it as
+  `false` and judge by the kind.
+- `set` is the member's set label (ADR 0057), or `null` when its spec named
+  none. Members with the same label in one team form one set. Schema version
+  13 stores the label in the `set_label` column.
 
 ## `team_log`
 

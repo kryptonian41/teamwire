@@ -26,23 +26,33 @@ pub struct RosterEntry {
     pub accepts_from_members: Vec<MessageType>,
     /// Whether typing into the member's session can wake it.
     pub can_be_typed_to: bool,
+    /// Whether the member is quiet in effect: its kind is quiet, or its spec
+    /// set `quiet`. A quiet member sends nothing and hears only its own lead.
+    /// Read as false from JSON that an older build wrote without it.
+    #[serde(default)]
+    pub quiet: bool,
+    /// The set the member belongs to, if its spec named one.
+    #[serde(default)]
+    pub set: Option<String>,
 }
 
 /// Every member, in the order they joined. A quiet member (a reviewer, plan
-/// reviewer or closer) accepts messages only from its own lead (MSG-3);
-/// every other member accepts every kind of information from anyone (MSG-1).
+/// reviewer, reconciler or closer, or a member whose spec set `quiet`)
+/// accepts messages only from its own lead (MSG-3); every other member
+/// accepts every kind of information from anyone (MSG-1).
 pub fn roster(ctx: &Ctx<'_>) -> Result<Vec<RosterEntry>, SendError> {
     let members = ctx.store.read(|tx| tx.members()?.all_or_corrupt())?;
     Ok(members
         .into_iter()
         .map(|m| {
             // A member accepts the types a member may send (MSG-1); a quiet
-            // kind accepts none (MSG-3).
+            // member accepts none (MSG-3), and may send none.
             let accepts_from_members = MessageType::ALL
                 .iter()
                 .copied()
-                .filter(|t| !m.kind.is_quiet() && m.kind.may_send(*t))
+                .filter(|t| m.may_send(*t))
                 .collect();
+            let quiet = m.is_quiet();
             let can_be_typed_to = ctx
                 .registry
                 .host(&m.host)
@@ -56,6 +66,8 @@ pub fn roster(ctx: &Ctx<'_>) -> Result<Vec<RosterEntry>, SendError> {
                 owns: m.owns,
                 accepts_from_members,
                 can_be_typed_to,
+                quiet,
+                set: m.set,
             }
         })
         .collect())

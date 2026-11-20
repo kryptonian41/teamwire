@@ -92,6 +92,24 @@ pub fn resend(
             .collect();
         return Err(SendError::NotResendable(why.join("; ")));
     }
+    // A withheld row is final: its recipient is quiet and hears only its
+    // own lead (MSG-3).
+    let withheld: Vec<&DeliveryRecord> = rows
+        .iter()
+        .filter(|r| wanted(r) && crate::quiet::is_withheld(&r.delivery))
+        .collect();
+    if chosen.is_empty() && !withheld.is_empty() {
+        let why: Vec<String> = withheld
+            .iter()
+            .map(|r| {
+                format!(
+                    "{id} -> {}: the recipient is quiet and hears only its own lead",
+                    r.delivery.recipient
+                )
+            })
+            .collect();
+        return Err(SendError::NotResendable(why.join("; ")));
+    }
     if chosen.is_empty() {
         return Err(SendError::NotResendable(format!(
             "no recipient of {id} is undelivered, unconfirmed or pending for over 60 seconds"
@@ -159,7 +177,7 @@ fn resendable(
     now: Timestamp,
 ) -> Result<bool, SendError> {
     Ok(match row.delivery.state {
-        DeliveryState::Undelivered => !is_held(row),
+        DeliveryState::Undelivered => !is_held(row) && !crate::quiet::is_withheld(&row.delivery),
         DeliveryState::Unconfirmed => true,
         DeliveryState::Pending => ctx
             .store

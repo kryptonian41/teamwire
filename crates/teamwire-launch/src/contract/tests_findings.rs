@@ -7,10 +7,11 @@ use std::path::Path;
 use super::*;
 
 /// The kinds that send and receive no messages.
-const QUIET_KINDS: [MemberKind; 3] = [
+const QUIET_KINDS: [MemberKind; 4] = [
     MemberKind::Reviewer,
     MemberKind::Closer,
     MemberKind::PlanReviewer,
+    MemberKind::Reconciler,
 ];
 
 fn render(kind: MemberKind) -> String {
@@ -23,6 +24,7 @@ fn render(kind: MemberKind) -> String {
         teamwire_bin: Path::new("/opt/x/teamwire"),
         check: None,
         owns: &[],
+        quiet: false,
     })
 }
 
@@ -255,7 +257,9 @@ fn a_quiet_kind_reads_the_full_text_of_a_lead_message() {
 #[test]
 fn a_talking_member_knows_plan_reviewers_of_other_teams_take_no_messages() {
     let text = render(MemberKind::Implementer);
-    assert!(text.contains("Reviewers, plan reviewers and closers of any team take no messages"));
+    assert!(text.contains(
+        "Reviewers, plan reviewers, reconcilers, closers and quiet members of any team take no messages."
+    ));
 }
 
 /// A person may type into a finished member's session; the finish section

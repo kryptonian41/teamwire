@@ -1,14 +1,24 @@
 import { describe, expect, test } from "bun:test";
 import type { ActionResult } from "../../shared/api.ts";
+import { StatusAll, TeamsList } from "../../shared/teamwire.ts";
+import status from "../../../fixtures/status.json";
+import teams from "../../../fixtures/teams.json";
+import { joinTeam } from "./teams.ts";
 import { canClose, canCloseTeam, canMessage, canReprompt, closeOutcome, closeRisks, leadNoteLines, replyPrefix, replyTarget, sendOutcome } from "./actions.ts";
 
 const r = (exit: number | null, stderr = "", stdout = ""): ActionResult => ({ exit, stdout, stderr, leadNotes: [] });
 
 describe("canMessage", () => {
   test("only implementers and investigators get message controls (plan D4)", () => {
-    expect(canMessage("implementer")).toBe(true);
-    expect(canMessage("investigator")).toBe(true);
-    for (const kind of ["reviewer", "closer", "plan_reviewer", null] as const) expect(canMessage(kind)).toBe(false);
+    expect(canMessage("implementer", false)).toBe(true);
+    expect(canMessage("investigator", false)).toBe(true);
+    for (const kind of ["reviewer", "closer", "plan_reviewer", null] as const) expect(canMessage(kind, false)).toBe(false);
+  });
+  test("a reconciler, and a member of any kind whose roster says quiet, get none", () => {
+    expect(canMessage("reconciler", false)).toBe(false);
+    for (const kind of ["implementer", "investigator", "reviewer", "closer", "plan_reviewer", "reconciler", null] as const) {
+      expect(canMessage(kind, true)).toBe(false);
+    }
   });
 });
 
@@ -53,6 +63,20 @@ describe("Reply with a note (plan D11)", () => {
     expect(replyTarget("lead", members)).toBeNull();
     expect(replyTarget("impl@other", members)).toBeNull();
     expect(replyTarget("ghost", members)).toBeNull();
+  });
+  test("never offered to a quiet asker", () => {
+    expect(replyTarget("inv", [{ role: "inv", kind: "investigator", quiet: true }])).toBeNull();
+    expect(replyTarget("rec", [{ role: "rec", kind: "reconciler" }])).toBeNull();
+  });
+  test("the joined members carry the roster's quiet, so a quiet asker of an old question gets no reply", () => {
+    // `web` asked m006 in the fixture. A relaunch after a failed start then made it quiet.
+    const joined = (quiet: boolean) => {
+      const roster = structuredClone(teams);
+      Object.assign(roster.teams[0]!.members.find((m) => m.role === "web")!, { quiet });
+      return joinTeam(StatusAll.parse(status)[0]!, TeamsList.parse(roster).teams).members;
+    };
+    expect(replyTarget("web", joined(false))).toBe("web");
+    expect(replyTarget("web", joined(true))).toBeNull();
   });
 });
 
@@ -115,11 +139,15 @@ describe("closing the team", () => {
 
 describe("canReprompt", () => {
   test("a reprompt is offered only to a running implementer or investigator, as the CLI's rule says", () => {
-    expect(canReprompt("implementer", "started")).toBe(true);
-    expect(canReprompt("investigator", "creating")).toBe(true);
-    expect(canReprompt("implementer", "failed")).toBe(false);
-    expect(canReprompt("implementer", "removed")).toBe(false);
-    expect(canReprompt("implementer", null)).toBe(false);
-    expect(canReprompt("reviewer", "started")).toBe(false);
+    expect(canReprompt("implementer", "started", false)).toBe(true);
+    expect(canReprompt("investigator", "creating", false)).toBe(true);
+    expect(canReprompt("implementer", "failed", false)).toBe(false);
+    expect(canReprompt("implementer", "removed", false)).toBe(false);
+    expect(canReprompt("implementer", null, false)).toBe(false);
+    expect(canReprompt("reviewer", "started", false)).toBe(false);
+  });
+  test("no reprompt for a running reconciler or a running quiet investigator", () => {
+    expect(canReprompt("reconciler", "started", false)).toBe(false);
+    expect(canReprompt("investigator", "started", true)).toBe(false);
   });
 });

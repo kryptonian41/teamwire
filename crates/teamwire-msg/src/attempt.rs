@@ -360,6 +360,12 @@ pub(crate) fn deliver_one(
         path: &comms_path,
         written: comms_written,
     };
+    if let Some(record) = crate::quiet::withheld_before_typing(ctx, message, recipient)? {
+        if let Some(b) = bump {
+            undo_bump(ctx, b);
+        }
+        return Ok(report_of(&record));
+    }
     let (line, named) = crate::lead_copy::line_for(ctx, team, message, recipient, comms)?;
     let party = match recipient {
         Recipient::Lead => Party::Lead,

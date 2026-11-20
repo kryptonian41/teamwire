@@ -43,6 +43,16 @@ test("a live member takes its facts from status, the roster and the event log", 
   expect(buildDetail("api", onTeam(false))!.actions).toBeNull();
 });
 
+test("a member whose roster entry says quiet gets no message control, only close", () => {
+  const quietTeams = structuredClone(teams);
+  const api = quietTeams.teams[0]!.members.find((m) => m.role === "api")!;
+  Object.assign(api, { quiet: true, set: "rev1" });
+  const team = joinTeam(StatusAll.parse(status)[0]!, TeamsList.parse(quietTeams).teams);
+  const d = buildDetail("api", { page: "team", team, rows, files: teamFiles, actions: true })!;
+  expect(value(d.kind)).toBe("implementer");
+  expect(d.actions).toEqual({ reprompt: false, note: false, close: true });
+});
+
 test("a removed member keeps its roster and log facts, and says why the rest is gone", () => {
   const d = buildDetail("oldapi", onTeam(true))!;
   expect(d.subject).toBe("removed");
