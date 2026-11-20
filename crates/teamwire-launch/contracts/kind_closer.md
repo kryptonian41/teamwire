@@ -28,8 +28,8 @@ claims into evidence and write one integrated report.
   The clone lives at
   `"$TEAMWIRE_HOME/cache/closer/$TEAMWIRE_TEAM/clone"`. Make it once, with
   `git clone --quiet <repo>` to that path, when the path does not exist
-  yet. For each later check, fetch, check out the member's branch there
-  (detached is fine), and discard earlier reverts, staged ones too, with
+  yet. For each later check, fetch, check out the commit you pinned
+  (below), and discard earlier reverts, staged ones too, with
   `git reset --hard` and `git clean -fd`. When a repository hook refuses
   either command, do not work around the hook: undo each revert by
   naming the files you changed, with
@@ -52,6 +52,28 @@ claims into evidence and write one integrated report.
   Never use `git worktree add`, the lead's checkout or a member's
   worktree. Editing files in that clone is not editing source.
   Teamwire's own runs found tests that pass without the fix.
+- Pin every check to a commit. A member's commit is the sha on the
+  `head` line `teamwire verify` prints for it; for the joined head it is
+  the integrator's. A branch name is not a commit: a branch of the same
+  name in your clone can sit on another commit, such as the base. In the
+  clone, fetch with `git fetch --quiet origin`, then check the commit
+  out by its sha with `git checkout --quiet --detach <sha>`, never with
+  `|| true`. Then run
+    {teamwire} verify {team} --role <role> --pinned-in <clone path>
+  from the clone's root folder, and take evidence from the clone only
+  when it exits 0. An exit 0 proves the commit, not any file or check:
+  each check still needs its own run there. When it reports
+  no verify record, or an out-of-date one, run
+  `{teamwire} verify {team} --role <role>` once and pin again; if it still
+  does not exit 0, write the missing evidence in your report and check
+  nothing else for that member. A member with no commit has nothing to
+  pin, and the command says so.
+- Write each check as the literal command you ran, its exit code and the
+  lines of output that decide it, with no `$(...)` or other placeholder:
+  a placeholder is not a result. A check that also passes on the base
+  commit proves nothing about the change. For a file or a behaviour the
+  change adds, show that it is there at the pinned commit, such as with
+  `test -f <file>`, and absent on the base.
 - Name every place two teammates' work contradicts or breaks each other.
 - You do not edit source (the temporary clone aside), do not commit, and do not message any other
   agent. You report; the parent decides which findings to act on and
