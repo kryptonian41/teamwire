@@ -152,6 +152,143 @@ R20). It is not installed; installing it is open question 10 in
 `ARCHITECTURE.md`. When installed, run it before each release, not on every
 commit, and turn each surviving mutant in the delivery path into a ticket.
 
+## Tests that fail now and then on macOS
+
+Two tests of `teamwire-cli` fail now and then on a Mac for a cause outside
+the code they test. Neither test is changed. Each entry below says how the
+failure looks, why it happens, how sure the cause is, and what to do when you
+see it.
+
+### `an_answer_no_hook_takes_exits_7` (`crates/teamwire-cli/tests/dialog.rs:399`)
+
+**Symptom.** The last state check fails:
+
+```
+panicked at crates/teamwire-cli/tests/dialog.rs:416:5:
+  left: Expired
+ right: Answered
+```
+
+nextest still reports the test as short, about 8 s.
+
+**Cause.**
+
+1. The test writes a dialog that expires 60 s later by the wall clock. The
+   helpers `now()` and `write_dialog` read `SystemTime::now`
+   (`dialog.rs:37-38`, `:151-152`).
+2. `teamwire dialog answer` records the answer while the dialog is still
+   pending.
+3. The command then waits 5 s for the member's hook to take the answer
+   (`ANSWER_TAKE_WAIT`, `crates/teamwire-core/src/dialog.rs:92`).
+4. The command counts those 5 s with `Instant`
+   (`crates/teamwire-cli/src/cmd/dialog/answer.rs:174`, `:183`, through
+   `SystemClock::monotonic`).
+5. On macOS, `Instant` reads a clock that stops while the Mac sleeps. The wall
+   clock keeps moving.
+6. A sleep during the run therefore moves the wall clock past the 60 s expiry,
+   while the command and nextest count only a few seconds.
+7. The test reads the dialog's state with the wall clock (`dialog.rs:165`).
+8. The store checks "past `expires_at`" before it checks "an answer is
+   recorded" (`crates/teamwire-store/src/dialog.rs:236-237`). So the store
+   reports `Expired`, not `Answered`.
+
+**How sure this is.** The failure was reproduced. A test run whose
+`dialog answer` process was frozen for 61 s failed on the same line with the
+same two values. A freeze of 50 s passed. The power log of the Mac (`pmset -g
+log`) showed a 300 s sleep inside the failed run, which nextest had timed at
+8.3 s. A second failure fits a 103 s sleep in the power log, but its output
+was lost.
+
+**Same exposure.** These tests of the same file also write a 60 s dialog by
+the wall clock. Each expects the dialog to be still open when the test reads
+it or runs `dialog answer` or `dialog show` on it. An expired dialog gets the
+refusal `expired` and no printed command, so a long sleep can fail them too:
+
+- `an_answer_to_a_dialog_that_changed_types_nothing_and_answers_nothing`
+  (`dialog.rs:228`)
+- `a_member_cannot_answer_even_with_its_token_unset` (`dialog.rs:323`)
+- `an_unanswerable_call_is_refused` (`dialog.rs:371-384`)
+- `show_prints_the_command_and_types_nothing` (`dialog.rs:480`)
+- `show_escapes_control_and_invisible_characters_in_the_command`
+  (`dialog.rs:551`)
+
+**What to do.** This failure means the Mac slept during the run. Run the test
+again with the Mac awake. `caffeinate -i` does not keep a Mac with a closed
+lid awake.
+
+**Where the cause is.** The cause is in the test, not in `teamwire dialog`.
+The test sets a real 60 s expiry by the wall clock, and the command it runs
+uses the real clock (`crates/teamwire-cli/src/wiring.rs:38`). A fix must
+respect two facts. On macOS, 5 s by `Instant` can span any amount of wall
+time if the Mac sleeps. The store's expiry rule comes before its answer rule.
+
+### `a_hyphen_in_the_team_name_is_refused_with_exit_1` (`crates/teamwire-cli/tests/launch.rs:155`)
+
+**Symptom.** The child `teamwire launch` has no exit code, and the test
+fails at once:
+
+```
+assertion `left == right` failed
+  left: None
+ right: Some(1)
+```
+
+The same kill shows up in an install test as a panic on the missing exit code
+(`crates/teamwire-cli/tests/install.rs:114`, `out.status.code().unwrap()`).
+
+**Likely cause.**
+
+1. The install tests give each test bed a hard link to the built binary,
+   `target/debug/teamwire`, inside a temporary folder (`link_binary`,
+   `install.rs:37-47`, called from `Bed::binary` at `install.rs:90-95`).
+2. Each temporary folder is a `TestHome` (`tests/fakes/src/lib.rs:48`), so the
+   folder and the link in it are deleted when the test ends.
+3. This test starts the same file by its main name (`launch.rs:64`).
+4. nextest runs the install tests and this test at the same time, because
+   neither is in a test group (`.config/nextest.toml`).
+5. macOS checks some process starts before they run and keeps the new process
+   waiting for the answer. For a file with several hard links, the check can
+   name the file by any of its links.
+6. When the check names a link that another test then deletes, the system
+   kills the waiting process with SIGKILL. The process dies before any
+   teamwire code runs.
+7. `wait_with_output` (`launch.rs:88`) returns a status with no exit code, and
+   the assertion at `launch.rs:159` prints `left: None`.
+
+**How sure this is.** This cause is likely, not proven. A stand-in loop showed
+the mechanism. Starts of a binary by its main name died 4 times in 28,954
+while other workers made and deleted hard links to it. Without the links,
+0 of 21,489 starts died. In each case the system log named a deleted link as
+the file it refused. In the real install tests, 1 run of 144 lost a child the
+same way, at `install.rs:114`. The failed run of this test also fits: 7
+install tests were running when it failed, and the system logged 3 dead
+waiting starts in the same half second. Two pieces of evidence are missing.
+This test's own launch call died 0 times in 47,882 tries. The kernel log
+lines of the failed run are gone, so no line ties the kill to this test's
+child.
+
+**What to do.** Run the test again on its own. A second failure on its own is
+a different problem, and needs its own investigation.
+
+**Where the cause is.** The cause is in a test helper together with macOS,
+not in `teamwire launch`. The only hard link in the repository is the one in
+`link_binary` (`install.rs:42`). teamwire's own `install` makes no link: it
+records the binary's resolved path (`this_binary`,
+`crates/teamwire-cli/src/cmd/install.rs:170`). A fix must respect these
+facts:
+
+- On macOS, a binary with several hard links can be checked under the name of
+  any link, so deleting one name can kill a start made through another name.
+- Cargo puts `target/debug/teamwire` in place by deleting the old file and
+  copying in the new one. A test that starts the binary while another cargo
+  command runs in the same `target/` can get "No such file or directory".
+- `Output.status.code()` is `None` for any death by a signal.
+
+`kill9_during_done_stores_whole_or_nothing`
+(`tests/crash/tests/kill_done.rs:43`) also failed once, in a full run under
+load, with "only 0 runs printed their completion before the kill; the kill
+window is off". Its cause was not investigated.
+
 ## Gates
 
 The gates, in the order they run, are listed in `docs/conventions.md`. A
