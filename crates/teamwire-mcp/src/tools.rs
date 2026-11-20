@@ -435,9 +435,10 @@ fn generations(ctx: &Ctx<'_>, report: &SendReport) -> Vec<Target> {
 /// The `team_inbox` text: each message whole, as `teamwire inbox` prints
 /// it. A model that reads only a tool's text, as some harnesses give it,
 /// must still get the messages.
-/// The inbox text. With `all` nothing is marked read, so the text says so:
-/// a member that took the listing as reading would still get the unread
-/// reprompt's hold.
+/// The inbox text. Its headline counts the messages this call marked read,
+/// not the ones it returned: with `all` it marks none, and a body that fails
+/// its hash is returned but stays unread. A member that took the listing as
+/// reading would still get the unread reprompt's hold.
 fn inbox_summary(items: &[teamwire_msg::InboxItem], peer: bool, all: bool) -> String {
     if items.is_empty() {
         return if all {
@@ -447,10 +448,20 @@ fn inbox_summary(items: &[teamwire_msg::InboxItem], peer: bool, all: bool) -> St
         }
         .to_owned();
     }
-    let marked = if all {
-        "none marked read"
+    let read = if all {
+        0
     } else {
-        "now marked read"
+        items.iter().filter(|i| i.hash_ok).count()
+    };
+    let marked = if read == items.len() {
+        "now marked read".to_owned()
+    } else if read == 0 {
+        "none marked read".to_owned()
+    } else {
+        format!(
+            "{read} now marked read, {} not marked read",
+            items.len() - read
+        )
     };
     let mut text = format!("{} message(s), {marked}:\n\n", items.len());
     for item in items {

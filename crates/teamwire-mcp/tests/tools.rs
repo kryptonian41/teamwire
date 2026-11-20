@@ -971,3 +971,47 @@ async fn resend_and_inbox_all_texts_do_not_misstate_what_is_stored() {
     let unread = call(&web, "team_inbox", json!({})).await;
     assert!(text(&unread).starts_with("1 message(s), now marked read:"));
 }
+
+/// The inbox headline counts the messages it marked read, not the ones it
+/// returned: a body that fails its hash is returned but stays unread.
+#[tokio::test]
+async fn the_inbox_headline_counts_only_the_messages_it_marked_read() {
+    let (mut rig, api, web) = two_members().await;
+    let send = |text: &'static str| {
+        call(
+            &api,
+            "team_send",
+            json!({"to": ["web"], "type": "finding", "text": text}),
+        )
+    };
+    send("the true text").await;
+    rig.store
+        .write(|tx| {
+            tx.connection().execute(
+                "UPDATE messages SET body = 'a changed text' WHERE display_id = 'm001'",
+                [],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    let said = text(&call(&web, "team_inbox", json!({})).await);
+    assert!(!said.contains("now marked read"), "{said}");
+    assert!(
+        said.starts_with("1 message(s), none marked read:"),
+        "{said}"
+    );
+
+    send("a healthy text").await;
+    let said = text(&call(&web, "team_inbox", json!({})).await);
+    assert!(
+        said.starts_with("2 message(s), 1 now marked read, 1 not marked read:"),
+        "{said}"
+    );
+    // Only the damaged one is still unread.
+    let said = text(&call(&web, "team_inbox", json!({})).await);
+    assert!(
+        said.starts_with("1 message(s), none marked read:"),
+        "{said}"
+    );
+    assert!(said.contains("m001"), "{said}");
+}

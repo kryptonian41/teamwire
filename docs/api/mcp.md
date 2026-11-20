@@ -165,12 +165,21 @@ The `note` key is present only when at least one listed message is from someone
 other than the member's own lead. It is left out otherwise.
 
 A body whose hash does not match is returned with `hash_ok: false` and a
-`store.error` event is recorded.
+`store.error` event is recorded. That message is not marked read.
 
 The text holds each message whole, in the form `teamwire inbox` prints:
-`<id> <type> from <sender> at <time>`, then the quoted body. It starts
-`<n> message(s), now marked read:` and ends with the `note` when the note
-is present. With nothing unread it is `no unread messages`.
+`<id> <type> from <sender> at <time>`, then the quoted body. It ends with
+the `note` when the note is present. Its headline counts the messages
+this call marked read, not the ones it returned:
+
+| case | headline |
+| --- | --- |
+| every message marked read | `<n> message(s), now marked read:` |
+| `all: true`, or every body failed its hash | `<n> message(s), none marked read:` |
+| some bodies failed their hash | `<n> message(s), <k> now marked read, <j> not marked read:` |
+
+With nothing unread it is `no unread messages`, and with `all: true` and
+nothing stored it is `no messages`.
 
 ## `team_ack`
 
