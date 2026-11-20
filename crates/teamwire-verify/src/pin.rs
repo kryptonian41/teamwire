@@ -17,8 +17,11 @@
 //!   its removal kept, so that tip is compared instead: removing a member
 //!   does not make an older record current;
 //! - the clone's HEAD, which must be detached, in a clone that shares no
-//!   git directory with the member's checkout: the closer reverts, resets
-//!   and cleans there, which must never touch the member's own work.
+//!   git directory with the member's checkout or its recorded repository:
+//!   the closer reverts, resets and cleans there, which must never touch
+//!   the member's own work. Both recorded folders are read, whatever sits
+//!   at the old worktree path now, and a clone that cannot be proven
+//!   separate is refused.
 //!
 //! A member with no commit to check (a pane member with no check, which
 //! verify skips, or one recorded with no commit, `none` outside git) has
@@ -191,16 +194,37 @@ fn clone_problems(
             branch = branch.trim(),
         ));
     }
-    let member_dir = if member.cwd.is_dir() {
-        Some(member.cwd.as_path())
-    } else {
-        member.repo.as_deref()
+    // The member's repository is read from both of its recorded folders,
+    // whatever sits at its old worktree path now: a folder made there later,
+    // outside git, must not hide the repository the store names.
+    let theirs: Vec<PathBuf> = [Some(member.cwd.as_path()), member.repo.as_deref()]
+        .into_iter()
+        .flatten()
+        .filter(|d| d.is_dir())
+        .filter_map(|d| common_dir(ctx, d))
+        .collect();
+    let Some(ours) = common_dir(ctx, clone) else {
+        out.push(format!(
+            "cannot read the git directory of the clone at {}, so it cannot be proven separate \
+             from {}'s repository",
+            clone.display(),
+            member.role
+        ));
+        return out;
     };
-    let shared = member_dir
-        .and_then(|d| common_dir(ctx, d))
-        .zip(common_dir(ctx, clone))
-        .is_some_and(|(a, b)| a == b);
-    if shared {
+    if theirs.is_empty() {
+        out.push(format!(
+            "cannot read the git directory of {}'s repository ({}), so the clone at {} cannot \
+             be proven separate from it",
+            member.role,
+            member
+                .repo
+                .as_deref()
+                .unwrap_or(member.cwd.as_path())
+                .display(),
+            clone.display()
+        ));
+    } else if theirs.contains(&ours) {
         out.push(format!(
             "the clone at {} shares its git directory with {}'s checkout: a closer's reverts, \
              resets and cleans there would change the member's own repository. Use a separate \

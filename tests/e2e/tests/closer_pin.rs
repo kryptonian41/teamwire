@@ -420,3 +420,80 @@ fn a_pane_member_pins_by_its_record_inside_git_and_has_nothing_to_pin_outside() 
     assert_eq!(run.code, 0, "{}", run.all());
     assert!(run.out.contains("there is nothing to pin"), "{}", run.all());
 }
+
+/// A removed member's repository is compared with the clone whatever sits
+/// at its old worktree path. An empty folder made there later, outside git,
+/// does not make the member's own repository pass as a separate clone.
+#[test]
+fn a_folder_at_a_removed_members_old_path_does_not_hide_its_repository() {
+    let (w, sha) = verified_writer("true");
+    let worktree = w.repo().join(".worktrees/writer");
+    let removed = w.teamwire(&["close", "demo", "--role", "writer"], None);
+    assert_eq!(removed.code, 0, "{}", removed.all());
+    assert!(!worktree.exists());
+    // The member's own repository, detached at the verified commit.
+    w.git(w.repo(), &["checkout", "--quiet", "--detach", &sha]);
+    let repo = w.repo().to_path_buf();
+    let shared = "shares its git directory with writer's checkout";
+    let run = pin_in(&w, "writer", &repo);
+    assert_eq!(run.code, 1, "{}", run.all());
+    assert!(run.err.contains(shared), "{}", run.all());
+
+    // The member's old path, recorded outside any repository, made again
+    // as an empty folder.
+    let old = w.work().join("retired-writer");
+    teamwire_store::Store::open_existing(
+        w.home.path(),
+        &teamwire_core::TeamName::parse("demo").unwrap(),
+    )
+    .unwrap()
+    .write(|tx| {
+        tx.connection().execute(
+            "UPDATE members SET cwd = ?1 WHERE role = 'writer'",
+            [old.display().to_string()],
+        )?;
+        Ok(())
+    })
+    .unwrap();
+    let run = pin_in(&w, "writer", &repo);
+    assert_eq!(run.code, 1, "{}", run.all());
+    assert!(run.err.contains(shared), "{}", run.all());
+    std::fs::create_dir_all(&old).unwrap();
+    let run = pin_in(&w, "writer", &repo);
+    assert_eq!(run.code, 1, "{}", run.all());
+    assert!(run.err.contains(shared), "{}", run.all());
+    assert!(!run.out.contains("pinned:"), "{}", run.all());
+
+    // A separate clone at the same commit still pins.
+    let clone = clone_at(&w, "closer-clone", &sha, true);
+    let run = pin_in(&w, "writer", &clone);
+    assert_eq!(run.code, 0, "{}", run.all());
+    assert!(
+        run.out.contains(&format!("pinned: writer at {sha}")),
+        "{}",
+        run.all()
+    );
+
+    // A recorded repository that cannot be read leaves the clone unproven.
+    teamwire_store::Store::open_existing(
+        w.home.path(),
+        &teamwire_core::TeamName::parse("demo").unwrap(),
+    )
+    .unwrap()
+    .write(|tx| {
+        tx.connection().execute(
+            "UPDATE members SET repo = ?1 WHERE role = 'writer'",
+            [w.work().join("no-such-repo").display().to_string()],
+        )?;
+        Ok(())
+    })
+    .unwrap();
+    let run = pin_in(&w, "writer", &clone);
+    assert_eq!(run.code, 1, "{}", run.all());
+    assert!(
+        run.err
+            .contains("cannot read the git directory of writer's repository"),
+        "{}",
+        run.all()
+    );
+}
