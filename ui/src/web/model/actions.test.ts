@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import type { ActionResult } from "../../shared/api.ts";
+import { StatusAll, TeamsList } from "../../shared/teamwire.ts";
+import status from "../../../fixtures/status.json";
+import teams from "../../../fixtures/teams.json";
+import { joinTeam } from "./teams.ts";
 import { canClose, canCloseTeam, canMessage, canReprompt, closeOutcome, closeRisks, leadNoteLines, replyPrefix, replyTarget, sendOutcome } from "./actions.ts";
 
 const r = (exit: number | null, stderr = "", stdout = ""): ActionResult => ({ exit, stdout, stderr, leadNotes: [] });
@@ -63,6 +67,16 @@ describe("Reply with a note (plan D11)", () => {
   test("never offered to a quiet asker", () => {
     expect(replyTarget("inv", [{ role: "inv", kind: "investigator", quiet: true }])).toBeNull();
     expect(replyTarget("rec", [{ role: "rec", kind: "reconciler" }])).toBeNull();
+  });
+  test("the joined members carry the roster's quiet, so a quiet asker of an old question gets no reply", () => {
+    // `web` asked m006 in the fixture. A relaunch after a failed start then made it quiet.
+    const joined = (quiet: boolean) => {
+      const roster = structuredClone(teams);
+      Object.assign(roster.teams[0]!.members.find((m) => m.role === "web")!, { quiet });
+      return joinTeam(StatusAll.parse(status)[0]!, TeamsList.parse(roster).teams).members;
+    };
+    expect(replyTarget("web", joined(false))).toBe("web");
+    expect(replyTarget("web", joined(true))).toBeNull();
   });
 });
 

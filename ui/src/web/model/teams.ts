@@ -14,6 +14,8 @@ export const pastHandoff = (context: MemberView["context"]): boolean => context 
 export interface JoinedMember extends MemberView {
   /** From the roster. Null when the roster has no entry for this role. */
   kind: MemberKind | null;
+  /** From the roster: quiet in effect. False when the roster has no entry for this role. */
+  quiet: boolean;
   category: StateCategory;
 }
 
@@ -32,10 +34,11 @@ export interface TeamModel {
 /** Joins each `status` member with its roster entry by team name and role. */
 export function joinTeam(status: StatusView, teams: readonly TeamEntry[], index = 0): TeamModel {
   const roster = status.team === null ? null : (teams.find((t) => t.name === status.team) ?? null);
-  const kinds = new Map(roster?.members.map((m) => [m.role, m.kind] as const));
+  const entries = new Map(roster?.members.map((m) => [m.role, m] as const));
   const members = status.members.map((m) => ({
     ...m,
-    kind: kinds.get(m.role) ?? null,
+    kind: entries.get(m.role)?.kind ?? null,
+    quiet: entries.get(m.role)?.quiet ?? false,
     category: classifyState(m.state),
   }));
   return {

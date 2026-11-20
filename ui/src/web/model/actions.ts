@@ -61,8 +61,9 @@ export const replyPrefix = (questionId: string) => `re ${questionId}: `;
 
 /**
  * The role a "Reply with a note" goes to, or null when plan D11 does not offer one for this asker.
- * The status view carries no `quiet`, and a quiet member can send no question, so a missing
- * `quiet` reads as not quiet.
+ * A quiet member can still have an unanswered question from an earlier launch that failed before
+ * it started, so `joinTeam` copies the roster's `quiet` onto each member. A missing `quiet` reads
+ * as not quiet, and the kind still decides.
  */
 export function replyTarget(
   asker: string,
