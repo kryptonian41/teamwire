@@ -49,9 +49,9 @@ pub struct Remote { /* team, role (None for the lead) */ }
 ## 2. Members
 
 ```rust
-pub enum MemberKind { Implementer, Reviewer, Investigator, Closer, PlanReviewer }
+pub enum MemberKind { Implementer, Reviewer, Investigator, Closer, PlanReviewer, Reconciler }
 impl MemberKind {
-    pub fn is_quiet(self) -> bool;                       // reviewers, plan reviewers and closers (MSG-3)
+    pub fn is_quiet(self) -> bool;                       // the kind alone: reviewers, plan reviewers, reconcilers and closers (MSG-3)
     pub fn may_send(self, kind: MessageType) -> bool;    // a member never sends reprompt or note; a quiet kind sends nothing
 }
 pub enum Mode { Worktree, Pane }
@@ -65,8 +65,23 @@ pub struct Member {
     pub base_sha: Option<String>, pub check: Option<String>, pub owns: Vec<String>,
     pub deadline_s: u64, pub state: MemberState, pub generation: u32,
     pub gen_started_at: Timestamp, /* … */
+    pub quiet: bool,                  // what the spec's `quiet` said; false for a quiet kind with no key
+    pub set: Option<String>,          // the spec's set label
+}
+impl Member {
+    pub fn is_quiet(&self) -> bool;                      // its kind is quiet, or `quiet` is true (MSG-3)
+    pub fn may_send(&self, kind: MessageType) -> bool;   // what its kind may send, and nothing when quiet
 }
 ```
+
+Every rule that decides silence asks `Member::is_quiet` or
+`Member::may_send`, never the kind alone: the sender and recipient checks of
+a send, the check of a recipient in another team, and the roster. A
+`Member`'s JSON (`teamwire export`) writes `quiet` in effect, the answer of
+`is_quiet`, so a reviewer's JSON says `"quiet": true` although its stored
+value is false. A reconciler reads the reports of one set of readers and
+writes the one report the next step acts on; it runs in `pane` mode only
+(ADR 0057). A set is the members with the same `set` label in one team.
 
 ## 3. Messages and deliveries
 
@@ -686,7 +701,9 @@ pub struct MemberSpec { pub role: Role, pub title: String, pub kind: Option<Memb
                         pub deadline_s: Option<u64>, pub setup: Option<String>,
                         pub dispatch: bool, pub accept_trust: bool,
                         pub context_handoff_tokens: Option<u64>,   // overrides the team's; 0 is refused
-                        pub plugins: BTreeMap<String, bool> }   // overrides the team's, per key
+                        pub plugins: BTreeMap<String, bool>,    // overrides the team's, per key
+                        pub quiet: Option<bool>,                // true makes any kind quiet; false on a quiet kind is refused (ADR 0058)
+                        pub set: Option<String> }               // set label, ^[a-z][a-z0-9_]{0,15}$ (ADR 0057)
 
 /// Everything a harness needs to build one member's start.
 pub struct MemberLaunch { pub team: TeamName, pub role: Role, pub address: Address,
@@ -939,12 +956,15 @@ list has no type for them: `set_sleep_hold`, `set_member_place`,
 `set_member_session`, `set_member_token_hash`, `set_refs`, `set_gate_told_generation`,
 `set_completion_final`, `clear_member_branch`, `set_member_scope` (for `teamwire amend`:
 it replaces a member's `check_cmd` and whole `owns` list; its record is the
-`CHECK AMENDED:` note stored in the same transaction, ADR 0046), `announce_once`, `heartbeat_watch_lease`, and the
+`CHECK AMENDED:` note stored in the same transaction, ADR 0046), `set_member_marks(role,
+quiet, set)` (a member's `quiet` and set label, which launch writes right after it inserts or
+relaunches the member and names in the data of that `member.creating` event; `NewMember`
+has no field for them), `announce_once`, `heartbeat_watch_lease`, and the
 metric-export writes `claim_metric_export` (whose `up_to: Option<u64>` limit stops a claim before an event of an open minute), `commit_metric_export` and
 `release_metric_claim`. The list is in the `Tx` doc comment
 (`crates/teamwire-store/src/tx.rs`).
 
-The schema is version 12: `crates/teamwire-store/src/schema/v1.sql` to `v12.sql`,
+The schema is version 13: `crates/teamwire-store/src/schema/v1.sql` to `v13.sql`,
 applied in order. Version 2 adds `team.closing_pid_started_at` and
 `metric_export.claimed_by_started_at`: the start time of the pid beside
 each, NULL when the platform could not read it (ADR 0002 decision 8).
@@ -972,7 +992,13 @@ rebuilds `events` with the `member.woken` type, as version 10 did, and keeps eve
 version 11 cannot be opened by an older binary. Version 12 (`src/schema/v12.sql`) rebuilds
 `events` the same way with three more types, `dialog.opened`, `dialog.answered` and
 `dialog.closed`, and adds no table and no column: a dialog's state is read from its events
-(ADR 0052). The tables and columns are those in
+(ADR 0052). Version 13 (`src/schema/v13.sql`) rebuilds `members` as version 9 did, with
+`reconciler` in its `kind` CHECK list and two new last columns: `quiet INTEGER NOT NULL
+DEFAULT 0 CHECK (quiet IN (0, 1))` and `set_label TEXT`. Every row keeps its values and takes
+`quiet` 0 and `set_label` NULL (ADR 0057, ADR 0058). A read-only open of an older database
+shows both as NULL, read as not quiet and in no set. `ReadTx::members` reads its order from
+`main.members`, because that open reads `members` through a view, which has no rowid. The
+tables and columns are those in
 `ARCHITECTURE.md`, "Data model". Constraints
 that carry integrity:
 

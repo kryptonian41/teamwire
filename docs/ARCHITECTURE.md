@@ -108,13 +108,13 @@ All state for a team sits in `$TEAMWIRE_HOME/teams/<team>/`:
 | `$TEAMWIRE_HOME/locks/worktree-<sha256>.lock` | launch, close | An empty file, made if missing and never deleted. The hash names a repository's git common directory. Launch and close hold the kernel's `flock` on it, through `Platform::lock_file`, around each `git worktree add`, `remove` and `prune` they run in that repository, waiting at most 300 s. The lock ends with the holder's open file, so a killed holder leaves nothing held |
 | `$TEAMWIRE_HOME/locks/user-key.lock` | `teamwire user-key` | An empty file, made if missing and never deleted. A run holds the kernel's `flock` on it, through `Platform::lock_file`, from its first look at `user.key` to its write, so two runs at once agree on one key. The wait has no limit. The lock ends with the holder's open file, so a killed run holds nothing (ADR 0040) |
 
-The database tables (schema version 12; exact DDL is owned by the store
+The database tables (schema version 13; exact DDL is owned by the store
 crate and listed in `docs/api/core.md`):
 
 | Table | One row per | Key columns |
 | --- | --- | --- |
 | `team` | team (single row) | `ulid`, `name`, `title`, `state` (`open`, `closing`, `closed`), `closing_pid`, `closing_pid_started_at`, `lead_session_id`, `lead_harness`, `lead_host`, `lead_kind`, `lead_route` (`sink` or `watch`), `sleep_hold_pid`, `sleep_hold_owned`, `created_at`, `afk_budget_ends_at` (set only on an AFK run's team: when its budget ends), `refs` (JSON array of `{provider, id}` ticket refs, ADR 0038) |
-| `members` | member, never deleted | `role`, `title`, `kind`, `mode`, `harness`, `host`, `place`, `session_id`, `token_sha256`, `cwd`, `repo`, `branch`, `base`, `base_sha`, `check_cmd` and `owns` (set by launch, replaced by `teamwire amend`, ADR 0046), `deadline_s`, `state` (`creating`, `started`, `failed`, `removed`), `generation` (a reprompt or a handoff raises it), `gen_started_at`, `gate_told_generation`, `removed_at`, `removed_note` |
+| `members` | member, never deleted | `role`, `title`, `kind` (`implementer`, `reviewer`, `investigator`, `closer`, `plan_reviewer`, `reconciler`), `mode`, `harness`, `host`, `place`, `session_id`, `token_sha256`, `cwd`, `repo`, `branch`, `base`, `base_sha`, `check_cmd` and `owns` (set by launch, replaced by `teamwire amend`, ADR 0046), `deadline_s`, `state` (`creating`, `started`, `failed`, `removed`), `generation` (a reprompt or a handoff raises it), `gen_started_at`, `gate_told_generation`, `removed_at`, `removed_note`, `quiet` (1 when the spec set `"quiet": true`; a member is quiet when its kind is or this is) and `set_label` (the spec's `set`), both written by launch with `set_member_marks` |
 | `messages` | message | `ulid`, `display_id` (unique), `sender` (`lead`, a role, or `role@team` / `lead@team` for another team's agent), `client_key` (unique with sender), `seq` (unique with sender), `type`, `re`, `commit_sha`, `body`, `body_sha256`, `created_at` |
 | `deliveries` | message and recipient | `recipient` (as `sender`), `state` (`pending`, `handed_off`, `unconfirmed`, `undelivered`, `acked`), `attempts`, `route`, `error_code`, `error_detail`, `reminded_at`, `acked_at` |
 | `completions` | completion | `ulid`, `role`, `generation`, `n` (unique with role), `status`, `summary`, `final_message`, `final_source`, `report_state` (`pending`, `delivering`, `delivered`, `undelivered`, `unconfirmed`), `delivering_since`, `route`, `reason`, `reason_detail`, `result_sha256` |
@@ -134,7 +134,8 @@ Rules that hold across the model:
   An undelivered message keeps its row with the reason.
 - Every write transaction that changes lifecycle or message state also
   writes the event row for its change (OBS-1). Bookkeeping writes write no
-  event: a member's place, session and token hash, a member's stored branch
+  event: a member's place, session and token hash, its `quiet` and set
+  label (named in the data of its `member.creating` event), a member's stored branch
   cleared by a retry, the generation a gate told, a completion's final
   message, the sleep-hold record, announcements, the watch lease heartbeat, and the metric export mark
   (an event for the mark would feed the export its own tail).
@@ -379,7 +380,7 @@ the database itself. This section says what is enforced.
 | The lead's MCP server skips the member-environment check | The session id check already refuses a member | ADR 0018 |
 | A member moves the base ref and shifts the diff that verify reads | Nothing: this is outside the threat model of a confused agent | ADR 0009 |
 | A repository holds back delivery | The default sink is host typing, which no repository setting can hold | DEL-7 |
-| A reviewer's independence is lost | Reviewers, plan reviewers and closers receive only from the lead | MSG-3 |
+| A reviewer's independence is lost | Reviewers, plan reviewers, reconcilers, closers and members whose spec set `quiet` receive only from the lead | MSG-3 |
 | A member or peer answers another member's permission dialog | Only `teamwire dialog answer` answers, with the lead's session proof; the hook answers only its own dialog id; a member with shell access could still write the database directly, as for every lead-only action | DEL-15, SEC-2, PRM-5 |
 
 ## Installing teamwire

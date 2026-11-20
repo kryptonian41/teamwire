@@ -309,7 +309,7 @@ reviewer in `worktree` mode. Every member is told that the brief is the
 agreed plan, to list any choice the brief does not cover under **Decisions I
 made**, and to record a question the brief marks open without answering it.
 Implementers and investigators talk only through `teamwire send`. Reviewers,
-plan reviewers and closers send nothing.
+plan reviewers, reconcilers and closers send nothing.
 
 A member's `kind` sets its role. Its `task_class` says how hard its task is
 to reason about. The two are separate: a review of a one-line rename and a
@@ -634,7 +634,7 @@ with a full context decides worse. Spend your context on the design:
 - Pass work by path. A brief or a reprompt names files. Never paste a
   report, a diff or a log into a message.
 - Read a member's result file and the summary at the top of its report.
-  A reviewer, plan reviewer or closer cannot message you, so it writes its
+  A reviewer, plan reviewer, reconciler or closer cannot message you, so it writes its
   questions under the heading `Questions for the parent`, right after its
   summary. Look for that heading in every such report, and answer in the
   owner's reprompt or in your plan. Read further only when two members
@@ -741,7 +741,7 @@ let it decide a question itself.
 ### Messages
 
 Leads, implementers and investigators talk, within a team and across teams.
-Reviewers, plan reviewers and closers send nothing, and only their own lead
+Reviewers, plan reviewers, reconcilers and closers send nothing, and only their own lead
 may message them, so their look at the work stays fresh. teamwire enforces
 every rule here.
 
@@ -867,7 +867,7 @@ Remove a member once it can no longer be useful, with
 | --- | --- |
 | investigator | Once the closer's findings on it are resolved. With no closer, once the members that may ask it questions have finished. |
 | implementer | Once `teamwire verify <team> --role <role>` passes and the closer's findings on it are resolved. |
-| reviewer, plan reviewer, closer | Once you have read its report and acted on it. |
+| reviewer, plan reviewer, reconciler, closer | Once you have read its report and acted on it. |
 | any member going the wrong way | At once, with `--unverified --stop`, then replace it. |
 
 A finished implementer whose verify is `FLAGGED` gets a waiver per flag,

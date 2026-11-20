@@ -118,6 +118,7 @@ whole run.
 | implementer | implementer, opus, high | Code must change. | its branch |
 | integrator | implementer, opus, high | Branches must join into one, as in every shape but parallel tickets and a single implementer. Start its task from `teamwire preset integrator`, and name its branch `afk/<team>`. | the joined branch `afk/<team>` |
 | reviewer | reviewer, opus, xhigh | A branch is finished. One per branch by default. Skip it only for a change so small that the closer's coverage check reads the whole diff anyway. | ranked findings |
+| reconciler | reconciler, opus, xhigh | Every reader of one set of reviewers or plan reviewers has finished. One per set. | one report: the confirmed findings per owner, the questions for the parent, and a table of every finding with the readers that raised it and its verdict |
 | closer | closer, opus, xhigh | Always, once code exists (section 2). | the integrated report and the exit codes |
 | reporter | investigator, opus, high | Always, at the end (section 7). | `afk/REPORT.md` |
 
