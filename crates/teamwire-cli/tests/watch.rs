@@ -373,15 +373,15 @@ fn an_export_endpoint_does_not_change_the_output() {
     );
 }
 
-/// A team whose lead may be a live `fake-claude` session in a `fake-herdr`
-/// pane, and one started member with no session yet.
+/// A team whose lead is a live `fake-claude` session in a `fake-herdr` pane,
+/// and one started member with no session yet.
 struct LeadRig {
     herdr: teamwire_fakes::FakeHerdrEnv,
     home: teamwire_fakes::TestHome,
 }
 
 impl LeadRig {
-    fn new(lead_live: bool) -> Self {
+    fn new() -> Self {
         use teamwire_core::{
             HarnessId, HostId, LeadRoute, MemberKind, MemberState, Mode, Role, SessionId,
             SessionKind, TeamName,
@@ -391,47 +391,45 @@ impl LeadRig {
             .set_script(&teamwire_fakes::ClaudeScript::default())
             .unwrap();
         let home = teamwire_fakes::TestHome::new().unwrap();
-        if lead_live {
-            let ws = herdr
-                .run(&[
-                    "workspace",
-                    "create",
-                    "--cwd",
-                    "/tmp",
-                    "--label",
-                    "lead",
-                    "--no-focus",
-                ])
-                .unwrap();
-            let pane = ws
-                .result()
-                .and_then(|r| r.pointer("/root_pane/pane_id")?.as_str().map(str::to_owned))
-                .unwrap();
-            let settings = herdr
-                .write_file("lead-settings.json", r#"{"env":{},"hooks":{}}"#)
-                .unwrap();
-            let started = herdr
-                .run(&[
-                    "agent",
-                    "start",
-                    "lead-agent",
-                    "--kind",
-                    "claude",
-                    "--pane",
-                    &pane,
-                    "--timeout",
-                    "20000",
-                    "--",
-                    "-n",
-                    "lead-agent",
-                    "--session-id",
-                    "lead-1",
-                    "--settings",
-                    &settings.display().to_string(),
-                ])
-                .unwrap();
-            assert_eq!(started.code, Some(0), "{started:?}");
-        }
+        let ws = herdr
+            .run(&[
+                "workspace",
+                "create",
+                "--cwd",
+                "/tmp",
+                "--label",
+                "lead",
+                "--no-focus",
+            ])
+            .unwrap();
+        let pane = ws
+            .result()
+            .and_then(|r| r.pointer("/root_pane/pane_id")?.as_str().map(str::to_owned))
+            .unwrap();
+        let settings = herdr
+            .write_file("lead-settings.json", r#"{"env":{},"hooks":{}}"#)
+            .unwrap();
+        let started = herdr
+            .run(&[
+                "agent",
+                "start",
+                "lead-agent",
+                "--kind",
+                "claude",
+                "--pane",
+                &pane,
+                "--timeout",
+                "20000",
+                "--",
+                "-n",
+                "lead-agent",
+                "--session-id",
+                "lead-1",
+                "--settings",
+                &settings.display().to_string(),
+            ])
+            .unwrap();
+        assert_eq!(started.code, Some(0), "{started:?}");
         let at = teamwire_platform::SystemClock.now();
         let mut store =
             teamwire_store::Store::open(home.path(), &TeamName::parse("alpha").unwrap()).unwrap();
@@ -496,8 +494,8 @@ impl LeadRig {
 
     /// `teamwire pr-watch -R o/r -i 1 7 <args>` with a fake `gh` first on
     /// `PATH`. The fake says pull request 7 is merged, so the watch prints
-    /// two lines and exits. `extra` is set on top of the cleared environment.
-    fn pr_watch(&self, args: &[&str], extra: &[(&str, &str)]) -> Run {
+    /// two lines and exits.
+    fn pr_watch(&self, args: &[&str]) -> Run {
         use std::os::unix::fs::PermissionsExt as _;
         let bin = self.home.path().join("gh-bin");
         std::fs::create_dir_all(&bin).unwrap();
@@ -523,7 +521,6 @@ impl LeadRig {
             .envs(env)
             .env("TEAMWIRE_HOME", self.home.path())
             .env("HERDR_ENV", "1")
-            .envs(extra.iter().copied())
             .output()
             .unwrap();
         Run {
@@ -548,7 +545,7 @@ impl LeadRig {
 /// with a live lead in a pane.
 #[test]
 fn the_watch_types_nothing_into_the_leads_pane() {
-    let rig = LeadRig::new(true);
+    let rig = LeadRig::new();
     let run = rig.watch(&[]);
     assert_eq!(run.code, 0, "{}{}", run.out, run.err);
     assert!(rig.typed().is_empty());
@@ -559,7 +556,7 @@ fn the_watch_types_nothing_into_the_leads_pane() {
 /// watch never starts.
 #[test]
 fn watch_refuses_deliver_as_a_usage_error() {
-    let rig = LeadRig::new(true);
+    let rig = LeadRig::new();
     let run = rig.watch(&["--deliver"]);
     assert_eq!(run.code, 3, "{}{}", run.out, run.err);
     assert!(run.err.contains("--deliver"), "{}", run.err);
@@ -570,8 +567,8 @@ fn watch_refuses_deliver_as_a_usage_error() {
 /// ADR 0055: `pr-watch --deliver <team>` is refused the same way.
 #[test]
 fn pr_watch_refuses_deliver_as_a_usage_error() {
-    let rig = LeadRig::new(true);
-    let run = rig.pr_watch(&["--deliver", "alpha"], &[]);
+    let rig = LeadRig::new();
+    let run = rig.pr_watch(&["--deliver", "alpha"]);
     assert_eq!(run.code, 3, "{}{}", run.out, run.err);
     assert!(run.err.contains("--deliver"), "{}", run.err);
     assert!(run.out.is_empty(), "{}", run.out);
@@ -582,8 +579,8 @@ fn pr_watch_refuses_deliver_as_a_usage_error() {
 /// with a live lead in a pane.
 #[test]
 fn pr_watch_prints_its_lines_and_types_nothing() {
-    let rig = LeadRig::new(true);
-    let run = rig.pr_watch(&[], &[]);
+    let rig = LeadRig::new();
+    let run = rig.pr_watch(&[]);
     assert_eq!(run.code, 0, "{}{}", run.out, run.err);
     assert_eq!(run.out, "WATCHING o/r#7 (poll 1s)\no/r#7 MERGED\n");
     assert!(rig.typed().is_empty());
