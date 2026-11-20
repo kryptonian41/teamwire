@@ -223,7 +223,7 @@ so they need no schema change:
 | --- | --- | --- |
 | `member.started` | `model`, `effort` | What the member was launched with. `null` when the spec named none. A missing key means an older build started the member. |
 | `member.started` | `excluded` | The `info/exclude` lines this launch added, as `[{ "file": <absolute path>, "lines": [...] }]`, one entry per append (setup files, then `/TASK.md`). A line that was already in the file is not listed. Close takes these back. A missing key means an older build started the member. |
-| `result.delivering` | `usage`, `session` | `usage` maps a model name to the session's running totals `input`, `output`, `cache_read` and `cache_creation`, counted once per `message.id` across the member's main transcript and its subagent transcripts (`<session-id>/subagents/*.jsonl`). A subagent file that would take the sum past 64 MiB, is not a regular file or cannot be read is skipped, and the rest still count. `session` is the session id, so a new session's totals are not taken as a continuation. `usage` is missing when the transcript is missing, unreadable, over 64 MiB, not a regular file, or holds no assistant usage; `session` is always written. `teamwire metrics` reads them. |
+| `result.delivering` | `usage`, `session` | `usage` maps a model name to the session's running totals `input`, `output`, `cache_read` and `cache_creation`, and `cost_micro_usd` when the harness recorded money (only pi does; ADR 0060), counted once per `message.id` across the member's main transcript and its subagent transcripts (`<session-id>/subagents/*.jsonl`). A subagent file that would take the sum past 64 MiB, is not a regular file or cannot be read is skipped, and the rest still count. `session` is the session id, so a new session's totals are not taken as a continuation. `usage` is missing when the transcript is missing, unreadable, over 64 MiB, not a regular file, or holds no assistant usage; `session` is always written. `teamwire metrics` reads them. |
 | `team.created` | `lead_cwd` | The folder of the lead's session at launch, when the harness can name it. |
 | `team.created` | `refs` | The spec's ticket refs as `{"provider", "id"}` objects, deduplicated, in order; `[]` for none. A missing key means an older build created the team. |
 | `team.refs_added` | `added` | The refs, as objects, that a later `launch --add` appended to the team, in order (ADR 0038). |
@@ -807,8 +807,13 @@ impl MemberLaunch { pub fn home_from_member_dir(&self) -> Option<String>;
 pub fn team_scratch_dir(home: &Path, team: &TeamName) -> PathBuf;
 /// One model's tokens in a session so far, in the shape of `data.usage` on
 /// `result.delivering`. A kind the harness does not report is 0.
-pub struct TokenCounts { pub input: u64, pub output: u64, pub cache_read: u64, pub cache_creation: u64 }
-impl TokenCounts { pub fn add(&mut self, other: Self); }  // each count saturating
+/// `cost_micro_usd` is the money the harness recorded, in whole millionths
+/// of a US dollar (ADR 0060); 0 means none recorded, and the JSON then
+/// leaves the key out.
+pub struct TokenCounts { pub input: u64, pub output: u64, pub cache_read: u64, pub cache_creation: u64,
+                         #[serde(default, skip_serializing_if = "is_zero")] pub cost_micro_usd: u64 }
+impl TokenCounts { pub fn add(&mut self, other: Self);    // each field saturating
+                   pub fn micro_usd(dollars: f64) -> u64; }  // nearest millionth; below 0 or NaN is 0
 pub type SessionUsage = BTreeMap<String, TokenCounts>;   // by model name
 impl LaunchSpec { pub fn shell_word(text: &str) -> String; }  // single-quotes any word outside [A-Za-z0-9/._-+:=@,]; "%" is quoted
 /// What the harness returns. Files are written by launch (mode given) before spawn.
