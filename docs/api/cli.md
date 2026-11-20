@@ -414,7 +414,7 @@ error says `reopen` has nothing to resume.
 answer the trust dialog, record the handoff and send` lines, then `dry run:
 nothing was closed, opened or written`. It opens the database read-only.
 
-### `teamwire verify <team> [--role R] [--waive FLAG --reason TEXT] [--deep] [--repair-files]`
+### `teamwire verify <team> [--role R] [--waive FLAG --reason TEXT] [--deep] [--repair-files] [--pinned-in DIR]`
 
 Runs each member's check and the diff rules (ADR 0009). Prints one verdict
 per member (`PASS`, `FLAGGED`, `FAIL`, `NO-CHECK`, `SKIPPED`) with its flags,
@@ -447,6 +447,21 @@ checks every message hash. `--repair-files` rewrites missing or differing
 `comms/` copies from the stored body (when that body still matches its hash).
 An `outbox/` copy is reported but never rewritten: the store keeps only its
 hash, not its bytes (STO-10).
+
+`--pinned-in DIR`, which needs `--role R`, runs no check and writes no record
+(VER-10, ADR 0059). It exits 0 with `pinned: <role> at <sha> (verify
+<verdict>); the clone at <DIR> is on that commit. This proves the commit
+only: each check still needs its own run there` when DIR is the root folder of
+a git checkout, DIR's HEAD is the head of R's newest verify record, and R's
+current HEAD is that head too. A removed member is pinned against its record
+alone. Otherwise it prints one `NOT PINNED: <why>` line per problem, then
+`evidence from this clone is not evidence for the verified commit`, and exits
+1. The problems are: no verify record, a record older than R's current HEAD,
+R's checkout missing or not readable as its own root, DIR missing, DIR not a
+git checkout or a folder inside one, and DIR on another commit. A member with
+no record and no worktree prints `<role>: <why there is nothing to pin>` and
+exits 0. The closer runs it from its clone after
+`git checkout --quiet --detach <sha>`.
 
 ### `teamwire amend <team> --role R [--check CMD] [--owns PATTERN]... --reason TEXT`
 
@@ -604,7 +619,7 @@ nothing answered; 3 usage; 6 a store error (after step 8, stderr adds `the
 answer may be recorded; run teamwire dialog show`); 7 the answer is recorded
 but the hook did not take it within 5 s. Shell only: no MCP tool.
 
-### `teamwire close <team> [--role R] [--stop] [--unverified] [--dry-run] [--keep-state] [--archive-to DIR] [--clear-stale-lock]`
+### `teamwire close <team> [--role R] [--stop] [--unverified] [--dry-run] [--keep-state] [--archive-to DIR] [--clear-stale-lock] [--expect ROLE:GEN:STATUS ...] [--abandon WHY]`
 
 Whole team: the fixed order of CLS-1. `--role` removes one member with the
 same checks plus CLS-5; `--stop` allows removing a busy member;
@@ -619,7 +634,25 @@ again (CLS-9). `--unverified` overrides it too. A whole-team close, and its
 preset closer, or close anyway if the user said so.` when no closer of the
 team has reported (a removed closer's report counts) and `n`, the number of
 implementers whose branch has a commit its base does not, is at least 1. The
-close still goes on, and the exit code does not change. Closing a member ends its background jobs with its tab. A member that ended its turn while its own background job ran looks idle to the host, so `close --role` removes it without `--stop`, and the job is lost. `--dry-run` prints the plan.
+close still goes on, and the exit code does not change.
+A whole-team close checks outcomes (CLS-10, ADR 0059), in the plan, in
+`--dry-run`, and again under the close lock before the archive. `--expect
+ROLE:GEN:STATUS`, repeatable, refuses unless ROLE is a live member in
+generation GEN whose newest result is in GEN with STATUS (`done`, `blocked` or
+`failed`; any other word, such as `skipped` or `clean`, is a usage error, exit 3). An
+unknown or removed ROLE refuses. Without `--expect` or `--abandon`, the close
+also refuses each started member whose current-generation result is
+`blocked` or `failed`, or whose current generation has no result after an
+older one had one, and names the lead's newest send when it was refused and
+no message was stored after it. An `--expect` naming a member accepts that
+member's outcome, and the refused send only when expectations name each of
+its recipients. A member with no result at all does not refuse.
+`--abandon WHY` closes the team as it is and records `closing as it is
+(--abandon): WHY` as a step. WHY must not be blank. `--expect` and `--abandon`
+do not combine, and neither works with `--role` or `--clear-stale-lock`. A
+refused outcome in the plan prints `REFUSED: <why>`, exits 1 and changes
+nothing. A refusal at the re-check under the lock stops the close at its
+`expect` step, before the archive, and exits 2 with nothing removed. Closing a member ends its background jobs with its tab. A member that ended its turn while its own background job ran looks idle to the host, so `close --role` removes it without `--stop`, and the job is lost. `--dry-run` prints the plan.
 A worktree whose HEAD is detached, with commits that no branch, tag or remote
 ref holds, first gets the branch `teamwire/rescue/<team>-<role>-<sha7>` (reused
 when it already points there; otherwise `-2` to `-99`; close refuses only when

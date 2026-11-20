@@ -22,8 +22,12 @@ is a SHOULD for a later version.
 
 ## Shared shapes
 
-Every tool returns structured content (JSON) plus a one-line text summary. A
-refused or failed call returns `isError: true` with:
+Every tool returns structured content (JSON) plus a text summary. A harness
+may hand the model the text only, as pi does for a tool it declares
+directly, so the text names what a caller needs before it acts: each role
+with its state and generation, each recipient with its delivery state, and
+each message whole (ADR 0059). A refused or failed call returns
+`isError: true` with:
 
 ```json
 {"error": {"code": "refused.too_long", "message": "finding is 912 chars; limit is 800", "retry": false}}
@@ -56,6 +60,13 @@ refused or failed call returns `isError: true` with:
 | `store.full` | The disk is full | no |
 | `store.schema_newer` | The database is newer than this binary | no |
 | `internal` | A bug; the message says where | no |
+
+The text of a refused or failed `team_send` or `team_resend` starts with
+`NOT SENT: <code>: <message>.` and says that no message was stored, no
+generation started and there is no message id. Only a reply that names a
+message id and its recipient is a receipt. A call whose arguments do not
+parse is refused with `invalid.argument` and recorded as a
+`message.refused` event, so the store holds a trace of it (MCP-2).
 
 A delivery that fails is not an error: the call succeeded in storing the
 message, and the result reports each recipient's state.
@@ -103,6 +114,10 @@ claims `lead` and a member's its role, whatever the server's own environment
 holds. The user sends with `teamwire send --from user` (ADR 0040). A `reprompt` also carries a `watch` key: `{"running": true,
 "pid": 4242}`, `{"running": false}`, or `{"running": null, "error": "..."}`
 when the lead's watch lease could not be read.
+
+The text names the id, the type and each recipient's state. A reprompt's
+text also names the generation it started for each member, as in
+`m014 reprompt sent: harness: handed_off, now generation 4`.
 
 With a `key` already used by this sender, the output is the first message's,
 with `duplicate_of_key: true`. Only recipients still `pending` or
@@ -152,6 +167,11 @@ other than the member's own lead. It is left out otherwise.
 A body whose hash does not match is returned with `hash_ok: false` and a
 `store.error` event is recorded.
 
+The text holds each message whole, in the form `teamwire inbox` prints:
+`<id> <type> from <sender> at <time>`, then the quoted body. It starts
+`<n> message(s), now marked read:` and ends with the `note` when the note
+is present. With nothing unread it is `no unread messages`.
+
 ## `team_ack`
 
 Mark messages read without fetching them (for a member that read the `.md`
@@ -188,7 +208,8 @@ The second call stores the completion whatever the report says.
 Read-only team view (WAT-11). Input: `{"team": "tw"}` for the lead; members
 get their own team. Output: the JSON of `teamwire status --json`
 (see `docs/api/cli.md`). For a member caller, `lead` is `null`: the lead's
-session id is what a member would need to speak as the lead.
+session id is what a member would need to speak as the lead. The text reads
+`team tw: 2 member(s): api: done, generation 4, web: working, generation 1`.
 
 ## `team_members`
 
@@ -197,7 +218,8 @@ team's roster instead; the caller is still proven in its own team. Output
 per member: `role`, `title`, `kind`,
 `lifecycle`, `generation`, `owns`, `accepts_from_members`, and
 `can_be_typed_to` (whether it can be woken by typing). No places, tokens or
-session ids.
+session ids. The text names each member as
+`api (implementer, started, generation 4)`.
 
 - `lifecycle` is the stored member record: `creating`, `started`, `failed`
   or `removed`. A member that has finished is still `started`. Whether a
