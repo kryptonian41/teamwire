@@ -13,12 +13,17 @@
 //! - R's worktree HEAD now, so a record older than the member's last
 //!   commit is reported as out of date, not taken as evidence. A HEAD that
 //!   cannot be proven (no checkout, not a checkout of its own) is refused
-//!   too, except for a removed member, which makes no more commits;
-//! - the clone's HEAD.
+//!   too. A removed worktree member's last commit is the tip of the branch
+//!   its removal kept, so that tip is compared instead: removing a member
+//!   does not make an older record current;
+//! - the clone's HEAD, which must be detached, in a clone that shares no
+//!   git directory with the member's checkout: the closer reverts, resets
+//!   and cleans there, which must never touch the member's own work.
 //!
-//! A member with no commit to check (a pane member verify skipped, or one
-//! recorded with no commit) has nothing to pin, and the pin says so. A
-//! worktree member with no verify record is refused: its commit is unknown.
+//! A member with no commit to check (a pane member with no check, which
+//! verify skips, or one recorded with no commit, `none` outside git) has
+//! nothing to pin, and the pin says so. Any other member with no verify
+//! record is refused: its commit is unknown.
 
 use std::path::{Path, PathBuf};
 
@@ -82,11 +87,13 @@ pub fn pin(ctx: &Ctx<'_>, role: &Role, clone: &Path) -> Result<Pin, VerifyError>
         nothing_to_pin: None,
     };
     let Some(newest) = newest else {
-        // A pane member keeps no branch of its own, and verify records none
-        // of its runs when it has no check: no commit was made to check.
-        if member.mode != teamwire_core::Mode::Worktree {
+        // A pane member with no check is skipped by verify, which records
+        // no commit for it. A pane member with a check gets a record with
+        // its commit once verify runs, so until then its commit is unknown.
+        if member.mode != teamwire_core::Mode::Worktree && member.check.is_none() {
             out.nothing_to_pin = Some(format!(
-                "{role} works in a pane with no verify record: there is nothing to pin"
+                "{role} works in a pane with no check and no verify record: there is nothing to \
+                 pin"
             ));
             return Ok(out);
         }
@@ -97,7 +104,8 @@ pub fn pin(ctx: &Ctx<'_>, role: &Role, clone: &Path) -> Result<Pin, VerifyError>
         return Ok(out);
     };
     let expected = newest.record.head_sha.trim().to_owned();
-    if expected.is_empty() {
+    // Verify writes `none` for a member that works outside git.
+    if expected.is_empty() || expected == "none" {
         out.nothing_to_pin = Some(format!(
             "verify recorded {role} as {} with no commit: there is nothing to pin",
             newest.record.verdict
@@ -105,13 +113,18 @@ pub fn pin(ctx: &Ctx<'_>, role: &Role, clone: &Path) -> Result<Pin, VerifyError>
         return Ok(out);
     }
     out.expected = Some(expected.clone());
-    // A removed member makes no more commits, so its record cannot fall
-    // behind. Any other member's current commit must be proven: one that
-    // cannot be read is not taken to match.
-    if member.state != MemberState::Removed {
+    // The member's current commit must be proven: one that cannot be read
+    // is not taken to match.
+    {
         match current_head(ctx, &member) {
             Ok(now) => {
-                if now != expected {
+                if now != expected && member.state == MemberState::Removed {
+                    out.problems.push(format!(
+                        "{role} was removed, and its kept branch is at {now}, but its newest \
+                         verify ran at {expected}: verify skips a removed member, so nothing \
+                         judged {now}; report the evidence for it as missing"
+                    ));
+                } else if now != expected {
                     out.problems.push(format!(
                         "{role}'s worktree is now at {now}, but its newest verify ran at \
                          {expected}: run `teamwire verify <team> --role {role}` again before you \
@@ -137,6 +150,8 @@ pub fn pin(ctx: &Ctx<'_>, role: &Role, clone: &Path) -> Result<Pin, VerifyError>
     // still runs each check in the clone and reports its exit code.
     match root_head(ctx, clone) {
         Ok(head) => {
+            out.problems
+                .extend(clone_problems(ctx, &member, clone, &expected));
             if head != expected {
                 out.problems.push(format!(
                     "the clone at {dir} is at {head}, not {expected}, the commit verify recorded \
@@ -155,11 +170,67 @@ pub fn pin(ctx: &Ctx<'_>, role: &Role, clone: &Path) -> Result<Pin, VerifyError>
     Ok(out)
 }
 
+/// Why the clone may not hold the closer's evidence, beyond its commit: it
+/// is on a branch, so a later fetch or checkout can move it without the sha
+/// changing in the report; or it shares its git directory with the
+/// member's checkout, so a revert, `git reset --hard` or `git clean` there
+/// changes the member's own repository.
+fn clone_problems(
+    ctx: &Ctx<'_>,
+    member: &teamwire_core::Member,
+    clone: &Path,
+    expected: &str,
+) -> Vec<String> {
+    let mut out = Vec::new();
+    let git = Git::new(ctx.platform, clone);
+    if let Ok(branch) = git.stdout(&["symbolic-ref", "--quiet", "--short", "HEAD"]) {
+        out.push(format!(
+            "the clone at {dir} is on branch {branch}, not detached: check the commit out by its \
+             sha with git -C {dir} checkout --quiet --detach {expected}",
+            dir = clone.display(),
+            branch = branch.trim(),
+        ));
+    }
+    let member_dir = if member.cwd.is_dir() {
+        Some(member.cwd.as_path())
+    } else {
+        member.repo.as_deref()
+    };
+    let shared = member_dir
+        .and_then(|d| common_dir(ctx, d))
+        .zip(common_dir(ctx, clone))
+        .is_some_and(|(a, b)| a == b);
+    if shared {
+        out.push(format!(
+            "the clone at {} shares its git directory with {}'s checkout: a closer's reverts, \
+             resets and cleans there would change the member's own repository. Use a separate \
+             clone made with git clone",
+            clone.display(),
+            member.role
+        ));
+    }
+    out
+}
+
+/// The git directory that `dir`'s checkout shares with its other worktrees,
+/// with links resolved.
+fn common_dir(ctx: &Ctx<'_>, dir: &Path) -> Option<PathBuf> {
+    let out = Git::new(ctx.platform, dir)
+        .stdout(&["rev-parse", "--git-common-dir"])
+        .ok()?;
+    std::fs::canonicalize(dir.join(out.trim())).ok()
+}
+
 /// The commit the member's checkout is on now. A worktree member's folder
-/// must be the root of its own checkout (`root_head`). A pane member works
-/// in a folder of a repository, so its HEAD is read where it works. Every
-/// failure is returned with its reason, never taken for a match.
+/// must be the root of its own checkout (`root_head`). A removed worktree
+/// member has no folder: its last commit is the tip of the branch its
+/// removal kept. A pane member works in a folder of a repository, so its
+/// HEAD is read where it works. Every failure is returned with its reason,
+/// never taken for a match.
 fn current_head(ctx: &Ctx<'_>, member: &teamwire_core::Member) -> Result<String, String> {
+    if member.state == MemberState::Removed && member.mode == teamwire_core::Mode::Worktree {
+        return kept_branch_tip(ctx, member);
+    }
     let cwd = &member.cwd;
     if !cwd.is_dir() {
         return Err(format!("its checkout {} does not exist", cwd.display()));
@@ -198,4 +269,25 @@ fn root_head(ctx: &Ctx<'_>, dir: &Path) -> Result<String, String> {
     }
     git.head()
         .map_err(|e| format!("the HEAD of {} cannot be read ({e})", dir.display()))
+}
+
+/// The tip of the branch a removed worktree member's removal kept.
+fn kept_branch_tip(ctx: &Ctx<'_>, member: &teamwire_core::Member) -> Result<String, String> {
+    let (Some(repo), Some(branch)) = (member.repo.as_deref(), member.branch.as_deref()) else {
+        return Err(format!(
+            "{} was removed and its row names no repository and branch to read",
+            member.role
+        ));
+    };
+    let reference = format!("refs/heads/{branch}^{{commit}}");
+    Git::new(ctx.platform, repo)
+        .stdout(&["rev-parse", "--verify", "--quiet", &reference])
+        .map(|sha| sha.trim().to_owned())
+        .map_err(|e| {
+            format!(
+                "{} was removed, and its kept branch {branch} cannot be read in {} ({e})",
+                member.role,
+                repo.display()
+            )
+        })
 }
