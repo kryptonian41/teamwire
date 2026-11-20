@@ -509,7 +509,7 @@ fn a_generation_a_note_or_a_peer_started_gets_no_corrective_hold() {
     report_ok(&rig, &api);
     rig.complete_now(&api);
     on_turn_end(&mut rig.ctx(), &api, &stop("api-1"));
-    send(
+    let (_, id) = send(
         &mut rig,
         &Actor::Lead,
         MessageType::Note,
@@ -517,11 +517,19 @@ fn a_generation_a_note_or_a_peer_started_gets_no_corrective_hold() {
         &body(301),
         DeliveryState::HandedOff,
     );
+    // The send wakes the finished member into its next generation.
+    let at = rig.clock.now();
+    rig.store
+        .write(|tx| tx.wake_generation(at, &api, &id).map(|_| ()))
+        .unwrap();
+    assert_eq!(generation(&rig, &api), 2);
+    assert_eq!(rig.events(EventType::MemberWoken).len(), 1);
     on_tool_use(&mut rig.ctx(), &api);
     assert!(matches!(
         on_turn_end(&mut rig.ctx(), &api, &stop("api-1")),
         TurnEndReply::Continue
     ));
+    assert!(corrective_holds(&rig).is_empty());
 
     // A peer's finding in generation 1 is information, not a reprompt.
     let (mut rig, api) = team();
