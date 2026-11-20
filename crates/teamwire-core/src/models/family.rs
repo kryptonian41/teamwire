@@ -76,16 +76,16 @@ const GOOGLE: &[(&str, ModelFamily)] = &[
 /// `openrouter/openai/gpt-6.2-astra` or `claude-bridge/claude-opus-5-5`.
 /// Reads no file and calls nothing.
 ///
-/// The string is lowercased and loses a trailing `:suffix`, such as pi's
-/// `:medium`. An `OpenRouter` id of three parts is placed by its vendor
+/// The string is lowercased. A trailing suffix such as pi's `:batch` stays,
+/// because both tables read only the start of an id. An `OpenRouter` id of
+/// three parts is placed by its vendor
 /// part alone, after a leading `~`, so `openrouter/openai/o3` is GPT
 /// although `o3` starts no row. The vendor `google` is the one exception:
 /// its id must start with `gemini` or `gemma`. Any other string is placed
 /// by the start of its `normalise_model` name. A string neither table
 /// places is `Unknown`.
 pub fn model_family(model: &str) -> ModelFamily {
-    let lower = model.trim().to_ascii_lowercase();
-    let whole = lower.rsplit_once(':').map_or(lower.as_str(), |(id, _)| id);
+    let whole = model.trim().to_ascii_lowercase();
     let parts: Vec<&str> = whole.split('/').collect();
     if let ["openrouter", vendor, id] = parts.as_slice() {
         let vendor = vendor.strip_prefix('~').unwrap_or(vendor);
@@ -97,7 +97,7 @@ pub fn model_family(model: &str) -> ModelFamily {
             .find(|(name, _)| *name == vendor)
             .map_or(ModelFamily::Unknown, |&(_, family)| family);
     }
-    by_start(STARTS, &super::normalise_model(whole))
+    by_start(STARTS, &super::normalise_model(&whole))
 }
 
 /// The family of the first row of `table` whose start begins `name`, else

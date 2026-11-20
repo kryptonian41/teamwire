@@ -816,8 +816,8 @@ pub enum ModelFamily { Claude, Gpt, Gemini, Gemma, Grok, Deepseek, Kimi, Glm, Qw
                        Mistral, Llama, Unknown }
 /// The family of a spec's `model` string, read from the string alone. It
 /// reads no file, calls nothing and never guesses: a string the tables
-/// do not place is `Unknown`. The string is lowercased and loses a trailing
-/// `:suffix`. An `openrouter/<vendor>/<id>` string is placed by its vendor
+/// do not place is `Unknown`. The string is lowercased. An
+/// `openrouter/<vendor>/<id>` string is placed by its vendor
 /// part alone, after a leading `~`, so `openrouter/openai/o3` is `Gpt`; the
 /// `google` vendor's id must start with `gemini` or `gemma`. Any other
 /// string is placed by the start of its `normalise_model` name, such as
