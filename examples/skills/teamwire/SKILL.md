@@ -105,20 +105,23 @@ orchestrated run costs more again. The sources for every rule and figure in
 this file are in `docs/research/2026-10-18-lead-field-reports.md` in the
 teamwire repository.
 
-`teamwire preset` lists the six team shapes and three steps added to a
-team. The `plan-review` step goes before the implementers, and the
-`integrator` and `closer` steps go after the last wave.
+`teamwire preset` lists the six team shapes and five steps added to a
+team. The `plan-review` and `plan-review-set` steps go before the
+implementers. The `review-set` step goes after the last implementer it
+reads, and the `integrator` and `closer` steps go after the last wave.
 `teamwire preset <name>` prints one preset's rules and a spec to fill in.
 
 | Shape | Use when |
 | --- | --- |
-| `implement-then-review` | The work is sequential, or members would need to see each other's decisions. One implementer writes all of it, one fresh reviewer reads the finished diff, then at most two fix rounds by the owner. Never a second review of the same diff. |
+| `implement-then-review` | The work is sequential, or members would need to see each other's decisions. One implementer writes all of it, and one review round reads the finished diff: one fresh reviewer, or one reviewer set. Then the owner gets at most two fix rounds. Never a second review round on the same diff. |
 | `parallel-tickets` | Tickets that touch different modules. The best case: no integration at all. |
 | `dependent-tickets` | Tickets with real blocking edges. Waves follow the edges, and the integrator merges blockers first. |
 | `survey` | Read-only investigation across several areas. |
 | `contract-split` | Last resort: one feature split across implementers. Expect bugs where the parts meet. |
 | `speckit` | One feature built with GitHub's spec-kit commands. A spec member writes the spec, the plan and `tasks.md`, a plan reviewer runs `analyze`, and one implementer runs `implement`. `teamwire speckit draft <tasks.md>` lists the files phases and stories share and drafts each story's `owns`. Read "Spec-kit features" in `reference.md` first. |
 | `plan-review` | The first step, when a wrong plan would waste more than one implementer's work. One fresh agent reads the plan and every brief and reports what a member could not act on. Run it alone, fix the briefs, then add the implementers. |
+| `plan-review-set` | The first step in place of `plan-review`, when the user chose a set. Two or three plan reviewers on different model families read the same plan once, and one reconciler joins their reports. "Sets: several model families on one judging job" says when to offer one. |
+| `review-set` | The review round in place of a single reviewer, when the user chose a set. Two or three reviewers on different model families read every implementer's finished diff once, and one reconciler writes one report with a section per owner. |
 | `integrator` | The step after the last wave of a shape that joins branches. One implementer merges the branches in the plan's order and runs the full gate. It decides nothing. |
 | `closer` | The last step of every team that wrote code. One agent verifies the team's claims and writes one report. |
 

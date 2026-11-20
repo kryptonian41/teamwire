@@ -1,4 +1,4 @@
-//! `teamwire preset`, and the nine files of `examples/presets/`. Each file
+//! `teamwire preset`, and the eleven files of `examples/presets/`. Each file
 //! must be a spec that `launch` accepts once its placeholders are filled in,
 //! so the test fills them in and runs the real validation.
 #![expect(
@@ -30,7 +30,7 @@ fn preset_text(name: &str) -> String {
     std::fs::read_to_string(presets_dir().join(format!("{name}.json"))).unwrap()
 }
 
-const NAMES: [&str; 9] = [
+const NAMES: [&str; 11] = [
     "survey",
     "implement-then-review",
     "parallel-tickets",
@@ -38,6 +38,8 @@ const NAMES: [&str; 9] = [
     "contract-split",
     "speckit",
     "plan-review",
+    "plan-review-set",
+    "review-set",
     "integrator",
     "closer",
 ];
@@ -60,8 +62,17 @@ fn git(dir: &Path, args: &[&str]) {
     );
 }
 
+/// The models `filled` gives the readers of a set, one family each. A preset
+/// names no model, so a reader has no family until the lead picks one.
+const READER_MODELS: [&str; 3] = [
+    "openrouter/anthropic/claude-x",
+    "openrouter/openai/gpt-x",
+    "openrouter/google/gemini-x",
+];
+
 /// The preset with its placeholders replaced by a real repository, real
-/// brief files and the branches its members start from.
+/// brief files and the branches its members start from. The readers of a
+/// set get models of three different families, as the lead would give them.
 fn filled(name: &str, work: &Path) -> String {
     let (repo, briefs) = fixture(work);
     // A pane that starts in an earlier member's worktree joins once launch
@@ -75,7 +86,15 @@ fn filled(name: &str, work: &Path) -> String {
         )
         .replace("/abs/path/repo", &repo.display().to_string())
         .replace("/abs/path/briefs", &briefs.display().to_string());
-    let doc: Value = serde_json::from_str(&text).unwrap();
+    let mut doc: Value = serde_json::from_str(&text).unwrap();
+    let readers = doc["children"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .filter(|c| c.get("set").is_some() && c["kind"] != "reconciler");
+    for (child, model) in readers.zip(READER_MODELS) {
+        child["model"] = Value::from(model);
+    }
     for child in doc["children"].as_array().unwrap() {
         if let Some(file) = child["task_file"].as_str() {
             std::fs::write(file, "the brief\n").unwrap();
@@ -92,7 +111,7 @@ fn filled(name: &str, work: &Path) -> String {
             std::fs::create_dir_all(cwd).unwrap();
         }
     }
-    text
+    doc.to_string()
 }
 
 /// The repository and the briefs folder that `filled` puts in a preset.
@@ -110,11 +129,12 @@ fn fixture(work: &Path) -> (PathBuf, PathBuf) {
     (repo, briefs)
 }
 
-fn validates(name: &str, work: &Path) {
-    validates_text(name, &filled(name, work), work);
+fn validates(name: &str, work: &Path) -> Vec<String> {
+    validates_text(name, &filled(name, work), work)
 }
 
-fn validates_text(name: &str, text: &str, work: &Path) {
+/// The plan's warnings, for a test that reads them.
+fn validates_text(name: &str, text: &str, work: &Path) -> Vec<String> {
     let home = TestHome::new().unwrap();
     let harness = Arc::new(FakeHarness::new());
     harness.set_interactive_caller(teamwire_core::SessionId::parse("lead-session").unwrap());
@@ -141,6 +161,7 @@ fn validates_text(name: &str, text: &str, work: &Path) {
     let spec = parse_spec(text).unwrap_or_else(|e| unreachable!("{name}: {e:?}"));
     let plan = validate(&spec, false, &env).unwrap_or_else(|e| unreachable!("{name}: {e:?}"));
     assert_eq!(plan.members.len(), spec.children.len(), "{name}");
+    plan.warnings
 }
 
 /// A platform that runs real processes (the launch check asks git about the
@@ -263,13 +284,15 @@ fn without_a_name_every_preset_is_listed() {
     assert_eq!(names, NAMES);
 }
 
-/// The six team shapes come first. `plan-review`, `integrator` and `closer`
-/// are steps a lead adds to a team, so each says so at the start of its
-/// description.
+/// The six team shapes come first. `plan-review`, `plan-review-set`,
+/// `review-set`, `integrator` and `closer` are steps a lead adds to a team, so
+/// each says so at the start of its description.
 #[test]
 fn the_steps_added_to_a_team_say_so_and_the_six_shapes_do_not() {
     for (name, start) in [
         ("plan-review", "FIRST STEP, not a team shape."),
+        ("plan-review-set", "FIRST STEP, not a team shape."),
+        ("review-set", "REVIEW STEP, not a team shape."),
         ("integrator", "FINAL STEP, not a team shape."),
         ("closer", "FINAL STEP, not a team shape."),
     ] {
@@ -307,6 +330,151 @@ fn the_plan_review_preset_is_one_plan_reviewer_in_a_pane() {
     assert_eq!(member["deadline_s"], 1200);
     assert!(member["task"].as_str().is_some_and(|t| !t.is_empty()));
     assert_eq!(file["_rules"].as_array().unwrap().len(), 6);
+}
+
+/// A set step: three readers of one kind that share one `set` label and one
+/// task text, and one reconciler of the same label that the lead adds once
+/// every reader has reported. Filled in with a model of a different family
+/// per reader, the readers alone launch with no set warning. The whole file
+/// warns only that the reconciler comes too early, which its `_launch_after`
+/// note already tells the lead.
+fn a_set_step_is_three_readers_and_a_reconciler(
+    name: &str,
+    kind: &str,
+    readers: [&str; 3],
+    reconciler: &str,
+) {
+    let file: Value = serde_json::from_str(&preset_text(name)).unwrap();
+    let members = file["children"].as_array().unwrap();
+    assert_eq!(members.len(), 4, "{name}");
+    let label = members[0]["set"].as_str().unwrap();
+    let task = members[0]["task"].as_str().unwrap();
+    for (member, role) in members.iter().zip(readers) {
+        assert_eq!(member["role"], role, "{name}");
+        assert_eq!(member["kind"], kind, "{name}/{role}");
+        assert_eq!(member["set"], label, "{name}/{role}");
+        assert_eq!(
+            member["task"], task,
+            "{name}/{role}: the readers share one task"
+        );
+        assert_eq!(member["mode"], "pane", "{name}/{role}");
+        assert_eq!(member["task_class"], "judgement", "{name}/{role}");
+        assert!(
+            member.get("harness").is_none(),
+            "{name}/{role} sets harness"
+        );
+    }
+    let join = &members[3];
+    assert_eq!(join["role"], reconciler, "{name}");
+    assert_eq!(join["kind"], "reconciler", "{name}");
+    assert_eq!(join["set"], label, "{name}");
+    assert_eq!(join["mode"], "pane", "{name}");
+    assert_eq!(join["task_class"], "judgement", "{name}");
+    assert_eq!(
+        join["_launch_after"], "every reader of the set has reported",
+        "{name}"
+    );
+    let join_task = join["task"].as_str().unwrap();
+    for role in readers {
+        let report = format!("$TEAMWIRE_HOME/teams/myteam/reports/{role}.md");
+        assert!(join_task.contains(&report), "{name}: {join_task}");
+    }
+
+    let set_warnings = |warnings: Vec<String>| -> Vec<String> {
+        warnings
+            .into_iter()
+            .filter(|w| w.starts_with("set_"))
+            .collect()
+    };
+    let work = tempfile::tempdir().unwrap();
+    let mut doc: Value = serde_json::from_str(&filled(name, work.path())).unwrap();
+    let whole = set_warnings(validates_text(name, &doc.to_string(), work.path()));
+    assert!(!whole.is_empty(), "{name}: the early reconciler warns");
+    for warning in &whole {
+        assert!(
+            warning.starts_with("set_reconciler_early: "),
+            "{name}: {warning}"
+        );
+    }
+    doc["children"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|c| c.get("_launch_after").is_none());
+    let readers_only = set_warnings(validates_text(name, &doc.to_string(), work.path()));
+    assert_eq!(readers_only, Vec::<String>::new(), "{name}");
+}
+
+#[test]
+fn the_plan_review_set_is_three_plan_reviewers_and_a_reconciler() {
+    a_set_step_is_three_readers_and_a_reconciler(
+        "plan-review-set",
+        "plan_reviewer",
+        ["plana", "planb", "planc"],
+        "planjoin",
+    );
+    // A reader of the set reads the plan as the single plan reviewer does.
+    let single = preset_doc("plan-review");
+    let set = preset_doc("plan-review-set");
+    assert_eq!(task_of(&set, "plana"), task_of(&single, "planreview"));
+}
+
+#[test]
+fn the_review_set_is_three_reviewers_and_a_reconciler() {
+    a_set_step_is_three_readers_and_a_reconciler(
+        "review-set",
+        "reviewer",
+        ["reva", "revb", "revc"],
+        "revjoin",
+    );
+    // Every reader reads every implementer's diff against that brief, and
+    // the reconciler names the roles that own code.
+    let doc = preset_doc("review-set");
+    for role in ["reva", "revjoin"] {
+        let task = task_of(&doc, role);
+        for implementer in ["impla", "implb"] {
+            assert!(
+                task.contains(&format!(
+                    "Implementer {implementer}: branch myteam/{implementer}, base "
+                )),
+                "{role}: {task}"
+            );
+            assert!(
+                task.contains(&format!(
+                    "brief \"$TEAMWIRE_HOME/teams/myteam/briefs/{implementer}.md\""
+                )),
+                "{role}: {task}"
+            );
+        }
+    }
+    assert!(task_of(&doc, "reva").contains("quoting the brief line"));
+    assert!(task_of(&doc, "revjoin").contains("The roles that own code are impla and implb"));
+}
+
+/// Two set steps in one team must not share a role, because launch never
+/// uses a role twice in one team.
+#[test]
+fn the_two_set_steps_share_no_role_and_say_how_to_run_again() {
+    let roles = |name: &str| -> Vec<String> {
+        preset_doc(name)["children"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| m["role"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    let plan = roles("plan-review-set");
+    for role in roles("review-set") {
+        assert!(!plan.contains(&role), "{role} is in both set steps");
+    }
+    for name in ["plan-review-set", "review-set"] {
+        let rules = rules_text(name);
+        assert!(
+            rules.contains("renames the `set` label, all four roles and the report paths"),
+            "{name}: {rules}"
+        );
+        assert!(rules.contains("A set reads once."), "{name}: {rules}");
+        assert!(rules.contains("A set is opt-in."), "{name}: {rules}");
+    }
 }
 
 #[test]
@@ -575,7 +743,9 @@ fn every_member_names_a_task_class_and_no_model() {
                 // The integrator only merges in a set order and runs the gate.
                 Some("implementer") if role == "integrator" => TaskClass::MechanicalEdit,
                 Some("implementer") => TaskClass::ContainedFeature,
-                Some("reviewer" | "plan_reviewer" | "closer") => TaskClass::Judgement,
+                Some("reviewer" | "plan_reviewer" | "closer" | "reconciler") => {
+                    TaskClass::Judgement
+                }
                 Some("investigator") => TaskClass::ReadOnlySurvey,
                 other => unreachable!("{name}/{role}: kind {other:?}"),
             };
@@ -640,7 +810,8 @@ fn the_models_family_sets_a_members_harness() {
 }
 
 /// The printed skeleton shows a member's task class beside its seat, right
-/// after `mode`, rather than after the task text where it is easy to miss.
+/// after `mode`, rather than after the task text where it is easy to miss,
+/// and a set label right after the kind.
 #[test]
 fn the_skeleton_prints_the_task_class_right_after_the_mode() {
     for name in NAMES {
@@ -661,6 +832,16 @@ fn the_skeleton_prints_the_task_class_right_after_the_mode() {
                 lines[i + 1],
                 lines[i]
             );
+        }
+        // A set label reads as part of the seat, so it follows the kind.
+        for (i, line) in lines.iter().enumerate() {
+            if line.starts_with("\"set\": ") {
+                assert!(
+                    lines[i - 1].starts_with("\"kind\": "),
+                    "{name}: {line} follows {}",
+                    lines[i - 1]
+                );
+            }
         }
     }
 }
@@ -794,7 +975,7 @@ fn every_read_only_member_carries_the_plugins_note() {
         for member in preset_doc(name)["children"].as_array().unwrap() {
             let read_only = matches!(
                 member["kind"].as_str(),
-                Some("reviewer" | "plan_reviewer" | "closer" | "investigator")
+                Some("reviewer" | "plan_reviewer" | "closer" | "investigator" | "reconciler")
             );
             if read_only {
                 let note = member["_note"].as_str().unwrap_or_default();

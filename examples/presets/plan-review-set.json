@@ -1,0 +1,75 @@
+{
+  "_shape": "FIRST STEP, not a team shape. Two or three plan reviewers on different model families read the same plan once, then one reconciler joins their reports.",
+  "_why_this_works": "A plan reviewer on one model family shares that family's blind spots. Readers on different families miss different things: in one controlled study, two reviewers of different families found 56.7% of planted errors, against 42.7% for two of the same family, though the study could not tell the family apart from the reviewers' strength. The readers never see each other's reports, so each one stays fresh. The reconciler then checks every finding in the plan and the code, so agreement between readers counts for nothing and one confirmed finding counts in full. You read one report and fix the briefs once. Nobody has measured what a third reader adds.",
+  "_when_to_skip": "A team where a single plan reviewer is enough, or where the user did not choose a set. A set is opt-in. A team with one small, clear task needs no plan review at all.",
+  "_rules": [
+    "This step takes the place of the single plan reviewer of `teamwire preset plan-review`. Write the plan, the team spec and every brief to files, and run the planning check from the teamwire skill. Then launch the readers alone. Fix the briefs from the reconciler's report, then add the implementers with `teamwire launch --add`. The skill's section 'Sets: several model families on one judging job' holds the order of work.",
+    "A set is opt-in. With the user present, ask which set to use when you settle the plan's questions. Recommend a set when the team has three or more implementers, or when any member's task class is `cross_cutting` or `concurrency_data_loss`. In a run the user is away from, use a set only when the user's task text asks for one.",
+    "Pick one model per family: the newest top-tier model of each family that `teamwire models --harness claude-code` and `teamwire models --harness pi` list. The `family` column says which family a model is. Use at least two families, and three when a third is reachable. A set has at most three readers, so with two families leave out `planc`. When more than three families are reachable, keep the three whose top models have the strongest evidence in `teamwire models --for judgement`, and say in the plan why.",
+    "Say in the plan when a pick has no measured result for its seat in `teamwire models --for judgement`. The user confirms or swaps each pick.",
+    "Set each reader's `harness` from its model's family, as the skill's 'Choose each member's model' says, and set `effort` on every reader. A model called with no effort setting can run below its best level. This preset sets no `harness`, `model` or `effort`, so fill in all three on every reader.",
+    "Before the launch, show the user the estimated money for the readers that run through a provider that bills each token. teamwire has no command that gives a model's tier, release date or price. Take them from the provider's own pages or from what you know, and say in the plan where each one came from.",
+    "Give every reader the same brief, and no reader a special focus. The readers here share one `task` text word for word, and launch warns when two readers of a set have different briefs. A reviewer with a special focus is a separate member outside the set.",
+    "Launch the reconciler only after every reader has reported. Leave it out of the first launch, as its `_launch_after` note says, and add it with `teamwire launch --add`. Launch warns with `set_reconciler_early` when you do not.",
+    "The reconciler reads the reports under role names. Do not tell it which model wrote which report.",
+    "Read the reconciler's summary and its 'Questions for the parent'. For a plan-reviewer set, you are the owner. Read 'Findings for the lead' and the 'Paraphrases' section, compare each paraphrase with what you meant, and fix the briefs once. For a reviewer set, send each owner one reprompt that names the reconciler's report and the owner's section, 'Findings for <role>'. Do not read the readers' reports yourself.",
+    "A set reads once. Never run a set, or a single plan reviewer, a second time on the same plan. A reader asked again finds something new each time, and the fixes grow without end.",
+    "When a reader cannot reach its model, carry on if two families remain. Otherwise replace that reader once, under a new role name, with another model of the same family. When the replacement fails too and one family is left, no set runs. Tell the user, treat the one report as a single plan review, and add no reconciler.",
+    "For a reader on Claude Code, give the plugins map from the skill's 'Skills and plugins in members'. A pi reader ignores that map, so check that the user's pi setup has no memory feature that carries one reader's findings to another.",
+    "Launch never uses a role twice in one team. A team that runs this preset again, for another plan, renames the `set` label, all four roles and the report paths in the reconciler's task, such as `planset2`, `pland`, `plane`, `planf` and `planjoin2`.",
+    "Every member's task class is `judgement`, and its mode is `pane`, because it writes nothing. Launch refuses a plan reviewer or a reconciler in any other mode."
+  ],
+  "team": "myteam",
+  "title": "Plan review set for CHANGEME",
+  "children": [
+    {
+      "_note": "On Claude Code, give this member the plugins map from the skill's 'Skills and plugins in members', so it reads no other member's findings through memory. Fill in its harness, model and effort.",
+      "role": "plana",
+      "title": "Read the plan, reader a",
+      "kind": "plan_reviewer",
+      "set": "planset",
+      "mode": "pane",
+      "task_class": "judgement",
+      "cwd": "/abs/path/repo",
+      "deadline_s": 1200,
+      "task": "Review the plan for team myteam before any implementer starts. Read the plan at /abs/path/briefs/PLAN.md, the team spec at /abs/path/briefs/spec.json and every brief in /abs/path/briefs/, then the code in /abs/path/repo that they point at. For each brief, write what it asks the member to build. Then report each place where a member would have to decide, guess or ask, ranked by harm, each with the brief's file and line. Findings only, no fixes. Do NOT edit any file in the repository. If every brief is ready, say so plainly rather than inventing findings. Start your report file with a summary of at most ten lines: the outcome, then what the lead must decide."
+    },
+    {
+      "_note": "On Claude Code, give this member the plugins map from the skill's 'Skills and plugins in members', so it reads no other member's findings through memory. Fill in its harness, model and effort.",
+      "role": "planb",
+      "title": "Read the plan, reader b",
+      "kind": "plan_reviewer",
+      "set": "planset",
+      "mode": "pane",
+      "task_class": "judgement",
+      "cwd": "/abs/path/repo",
+      "deadline_s": 1200,
+      "task": "Review the plan for team myteam before any implementer starts. Read the plan at /abs/path/briefs/PLAN.md, the team spec at /abs/path/briefs/spec.json and every brief in /abs/path/briefs/, then the code in /abs/path/repo that they point at. For each brief, write what it asks the member to build. Then report each place where a member would have to decide, guess or ask, ranked by harm, each with the brief's file and line. Findings only, no fixes. Do NOT edit any file in the repository. If every brief is ready, say so plainly rather than inventing findings. Start your report file with a summary of at most ten lines: the outcome, then what the lead must decide."
+    },
+    {
+      "_note": "On Claude Code, give this member the plugins map from the skill's 'Skills and plugins in members', so it reads no other member's findings through memory. Fill in its harness, model and effort. Leave it out when only two families are reachable.",
+      "role": "planc",
+      "title": "Read the plan, reader c",
+      "kind": "plan_reviewer",
+      "set": "planset",
+      "mode": "pane",
+      "task_class": "judgement",
+      "cwd": "/abs/path/repo",
+      "deadline_s": 1200,
+      "task": "Review the plan for team myteam before any implementer starts. Read the plan at /abs/path/briefs/PLAN.md, the team spec at /abs/path/briefs/spec.json and every brief in /abs/path/briefs/, then the code in /abs/path/repo that they point at. For each brief, write what it asks the member to build. Then report each place where a member would have to decide, guess or ask, ranked by harm, each with the brief's file and line. Findings only, no fixes. Do NOT edit any file in the repository. If every brief is ready, say so plainly rather than inventing findings. Start your report file with a summary of at most ten lines: the outcome, then what the lead must decide."
+    },
+    {
+      "_launch_after": "every reader of the set has reported",
+      "_note": "On Claude Code, give this member the plugins map from the skill's 'Skills and plugins in members', so it reads no other member's findings through memory. Its report paths name the readers that ran: drop a reader you left out or lost.",
+      "role": "planjoin",
+      "title": "Join the plan reviews",
+      "kind": "reconciler",
+      "set": "planset",
+      "mode": "pane",
+      "task_class": "judgement",
+      "cwd": "/abs/path/repo",
+      "deadline_s": 1800,
+      "task": "Reconcile the plan-reviewer set planset of team myteam. Read the reports of its readers: \"$TEAMWIRE_HOME/teams/myteam/reports/plana.md\", \"$TEAMWIRE_HOME/teams/myteam/reports/planb.md\" and \"$TEAMWIRE_HOME/teams/myteam/reports/planc.md\". The readers reviewed the plan at /abs/path/briefs/PLAN.md, the team spec at /abs/path/briefs/spec.json and every brief in /abs/path/briefs/. Check each finding in those files and in the code in /abs/path/repo that they point at. The lead owns the plan, so write one section, headed 'Findings for the lead', with its findings grouped by brief, and the 'Paraphrases' section. Findings only, no fixes. Do NOT edit any file in the repository. If nothing the readers found holds, say so plainly. Start your report file with a summary of at most ten lines: the outcome, then what the lead must decide."
+    }
+  ]
+}
