@@ -76,10 +76,14 @@ harmonic mean of precision and recall.
   confounded, and nobody annotated the planted errors independently.
 - 187 of 1,995 cross-family false findings came from model bias. In 136 of
   those, the reviewer claimed that a tool or feature the author used does not
-  exist.
+  exist. The paper sorted the false findings with keywords, and it says that
+  "the classification is keyword-based and was not validated".
 
-Greptile ran 1,000 real pull requests and found that each family catches 2
-to 3 points more of the other family's high-severity bugs. Greptile sells a
+Greptile ran 1,000 real pull requests and measured the recall of
+high-severity bugs. Each model's recall was higher in the other model's pull
+requests. The post's chart puts the gap at about 2.0 percentage points for
+GPT-5.5 on Claude Code's pull requests, and 3.2 for Opus 4.7 on Codex's pull
+requests. Greptile sells a
 review tool, reports no variance and builds its ground truth from a
 heuristic. A design-document study (arXiv 2606.01490) scored a reviewer from
 another family at 4.606 of 5, against 4.493 for a same-family reviewer.
@@ -91,10 +95,13 @@ a large effect.
 ### 1.2 A second reviewer
 
 In Song's study, a fresh Claude review plus a GPT-5.4 review matched 85 of
-150 planted errors (56.7%). Two fresh Claude reviews matched 64 (42.7%),
-with a Holm-adjusted p of .006. The mixed pair did not beat two GPT-5.4
-reviews, at 4.1 points higher and p = .184. So the gain may come from GPT-5.4
-being the stronger reviewer, and not from its family.
+150 planted errors (56.7%). Two fresh Claude reviews matched 64 (42.7%). The
+mixed pair's gain over the two Claude reviews has a Holm-adjusted p of .006.
+Two GPT-5.4 reviews that saw only the artifact were compared with the mixed
+pair on the 29 artifacts with no failed session. The mixed pair scored 4.1
+points higher, with an adjusted p of .184, so it did not beat them. So the
+gain may come from GPT-5.4 being the stronger reviewer, and not from its
+family.
 
 Kumar et al. (arXiv 2606.15689) found that every two-model union scored a
 lower F1 than the best single model. Those union numbers do not add up,
@@ -455,7 +462,7 @@ SWE for software engineering.
 | --- | --- | --- | --- | --- |
 | Song, "When Does a Second Model Help? Cross-Model Review in LLM Verification" (arXiv 2610.01471 v2) | 2026-10-01, rev. 2026-10-06 | https://arxiv.org/html/2610.01471v2 | A GPT-5.4 reviewer is not significantly better in F1 than a fresh Claude session. A fresh Claude plus GPT-5.4 pair matched 56.7% of planted errors, against 42.7% for two fresh Claude reviews. | measured, on point |
 | Song, "Cross-Context Review" (arXiv 2603.12123 v2) | 2026-03-12, rev. 2026-10-01 | https://arxiv.org/abs/2603.12123 | A fresh session beat a second pass in the same session. A fresh session did not differ significantly from the first same-session review. | measured, nearby |
-| Greptile, "Models are worse at reviewing their own code" | 2026-07-21 | https://www.greptile.com/blog/model-inversion | Opus 4.7 and GPT-5.5 each found 2 to 3 points more bugs in the other model's pull requests. The post reports no variance. | measured, on point (a review-tool maker with a stake, weak controls) |
+| Greptile, "Models are worse at reviewing their own code" | 2026-07-21 | https://www.greptile.com/blog/model-inversion | Each model's recall of high-severity bugs was higher in the other model's pull requests, by about 2.0 and 3.2 percentage points on the post's chart. The post reports no variance. | measured, on point (a review-tool maker with a stake, weak controls) |
 | Kumar, Bararia, Raj, "Bigger Isn't Always Better" (arXiv 2606.15689) | 2026-04-09 | https://arxiv.org/html/2606.15689v1 | Every two-model union scored a lower F1 than the best single model. The union numbers do not add up. | measured, on point |
 | Kanamarlapudi and K, "LLM Consortium for Software Design Refinement" (arXiv 2606.01490) | 2026-05-31 | https://arxiv.org/html/2606.01490v1 | Joined parallel plans scored worst of 12 setups. One planner with a reviewer from another family scored second. | measured, on point (design documents, judged by models, no human check) |
 | Kim, Garg, Peng, Garg, "Correlated Errors in Large Language Models" (arXiv 2506.07962, International Conference on Machine Learning 2025) | 2025-06-09 | https://arxiv.org/html/2506.07962v1 | Two wrong models pick the same wrong answer about 60% of the time. Same-company pairs agree a little more. | measured, nearby |

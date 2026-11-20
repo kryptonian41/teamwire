@@ -315,3 +315,24 @@ fn the_decision_record_states_the_rules_of_a_set() {
         );
     }
 }
+
+/// Each figure the note takes from Song and from Greptile says what the
+/// source measured, and the note keeps the paper's caveat on its own count.
+#[test]
+fn the_research_note_states_what_song_and_greptile_measured() {
+    let note = flat(&repo_doc("docs/research/2026-11-19-model-family-sets.md"));
+    for phrase in [
+        "The mixed pair's gain over the two Claude reviews has a Holm-adjusted p of .006.",
+        "Two GPT-5.4 reviews that saw only the artifact were compared with the mixed pair \
+         on the 29 artifacts with no failed session.",
+        "\"the classification is keyword-based and was not validated\"",
+        "measured the recall of high-severity bugs",
+        "about 2.0 and 3.2 percentage points",
+    ] {
+        assert!(note.contains(phrase), "the note lacks: {phrase}");
+    }
+    assert!(
+        !note.contains("2 to 3 points more"),
+        "the note still counts bugs"
+    );
+}
