@@ -91,10 +91,22 @@ pub(crate) fn outcome_refusals(
         if opts.abandon.is_none() {
             out.extend(unacknowledged(ctx, &team.name, members, &opts.expect)?);
             out.extend(refused_send(ctx, &team.name, members, &opts.expect)?);
+            out.extend(undone_reprompt(ctx, &team.name, members, &opts.expect)?);
         }
         Ok(out)
     })();
     found.unwrap_or_else(|e| vec![format!("the outcome check could not read the store: {e}")])
+}
+
+/// The refusals of the expectations alone, for a team whose outcomes are
+/// not checked any more (a closed team kept on disk).
+pub(crate) fn expectation_refusals(
+    ctx: &Ctx<'_>,
+    members: &[Member],
+    expected: &[Expected],
+) -> Vec<String> {
+    unmet(ctx, members, expected)
+        .unwrap_or_else(|e| vec![format!("the outcome check could not read the store: {e}")])
 }
 
 /// The members a close would archive mid-story: started, with a current
@@ -272,4 +284,59 @@ pub(crate) fn refused_send(
         kind = field("type"),
         at = refused.time,
     )))
+}
+
+/// The refusal of a close whose lead's newest stored message is a reprompt
+/// that started no generation for some member it was sent to: its delivery
+/// failed, and the generation was given back, so the member's result is
+/// older than the reprompt (ADR 0059). `None` when the newest message is no
+/// reprompt, when it started a generation for each started recipient, or
+/// when an expectation names each recipient it did not start one for.
+pub(crate) fn undone_reprompt(
+    ctx: &Ctx<'_>,
+    team: &TeamName,
+    members: &[Member],
+    expected: &[Expected],
+) -> Result<Option<String>, StoreError> {
+    ctx.store.read(|tx| {
+        let newest = tx
+            .events_of_type(EventType::MessageSent)?
+            .items
+            .into_iter()
+            .rfind(|e| e.data.get("sender_kind").and_then(Value::as_str) == Some("lead"));
+        let Some(ulid) = newest.and_then(|e| e.subject) else {
+            return Ok(None);
+        };
+        let Some(message) = tx.message(&ulid)? else {
+            return Ok(None);
+        };
+        if message.kind != teamwire_core::MessageType::Reprompt {
+            return Ok(None);
+        }
+        let id = message.display_id.as_str();
+        let mut missed = Vec::new();
+        for m in members.iter().filter(|m| m.state == MemberState::Started) {
+            if tx
+                .delivery(&ulid, &teamwire_core::Recipient::Member(m.role.clone()))?
+                .is_none()
+                || expected.iter().any(|e| e.role == m.role)
+            {
+                continue;
+            }
+            if tx.generation_started_by(&m.role, id)?.is_none() {
+                missed.push(format!("{} (generation {})", m.role, m.generation));
+            }
+        }
+        if missed.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(format!(
+            "the lead's newest reprompt {id} started no generation for {who}: its delivery \
+             failed and the generation was given back, so the result there answers an older \
+             task. Check each result with `teamwire status {team}`, send the reprompt again or \
+             close with --expect <role>:<generation>:<status> for each result you need, or with \
+             --abandon \"<why>\" to close the team as it is",
+            who = missed.join(", "),
+        )))
+    })
 }

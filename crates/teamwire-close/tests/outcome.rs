@@ -172,7 +172,7 @@ fn team_of(results: &[(&str, u32, Option<CompletionStatus>)]) -> Rig {
                     .member(&who)?
                     .is_some_and(|m| m.generation < *generation)
                 {
-                    tx.bump_generation(now, &who, "m001")?;
+                    tx.bump_generation(now, &who, "m900")?;
                 }
                 if let Some(status) = status {
                     tx.insert_completion(
@@ -472,4 +472,116 @@ fn a_refused_send_is_answered_only_by_an_expectation_for_each_member_it_was_mean
     let report = close(&mut rig.ctx(), CloseTarget::Team, both);
     assert_eq!(report.stopped_at, None, "{report:?}");
     assert!(report.refusals.is_empty(), "{report:?}");
+}
+
+fn named(expect: &[&str]) -> CloseOpts {
+    CloseOpts {
+        team: teamwire_core::TeamName::parse(TEAM).ok(),
+        expect: expect
+            .iter()
+            .map(|e| Expected::parse(e).unwrap_or_else(|why| unreachable!("{e}: {why}")))
+            .collect(),
+        ..CloseOpts::default()
+    }
+}
+
+/// A store with no team row (a launch killed before it wrote one) is
+/// deleted by a plain close. An expectation cannot hold there, so it
+/// refuses, in the plan and the close, and the directory stays.
+#[test]
+fn an_expectation_refuses_on_a_store_with_nothing_recorded() {
+    let mut rig = Rig::without_team_row();
+    let dir = rig.team_dir();
+    let plan = plan_close_with(&rig.ctx(), CloseTarget::Team, &named(&["missing:4:done"]));
+    let why = plan.refusals.join("; ");
+    assert!(
+        why.contains("--expect missing:4:done: the team has no member missing"),
+        "{plan:?}"
+    );
+    let report = close(
+        &mut rig.ctx(),
+        CloseTarget::Team,
+        named(&["missing:4:done"]),
+    );
+    assert!(!report.refusals.is_empty(), "{report:?}");
+    assert!(report.steps.is_empty(), "{report:?}");
+    assert!(dir.join("team.db").is_file());
+}
+
+/// A team closed with `--keep-state` still has its store. Closing it again
+/// with an expectation checks the expectation: a wrong one refuses and
+/// keeps the store, the matching one finishes the close.
+#[test]
+fn an_expectation_is_checked_when_a_kept_closed_team_is_closed_again() {
+    let mut rig = team_of(&[("short", 1, Some(CompletionStatus::Done))]);
+    let dir = rig.team_dir();
+    let kept = CloseOpts {
+        keep_state: true,
+        ..CloseOpts::default()
+    };
+    let report = close(&mut rig.ctx(), CloseTarget::Team, kept);
+    assert_eq!(report.stopped_at, None, "{report:?}");
+    assert_eq!(rig.team().state, TeamState::Closed);
+
+    for wrong in ["missing:4:done", "short:2:done"] {
+        let plan = plan_close_with(&rig.ctx(), CloseTarget::Team, &named(&[wrong]));
+        assert!(
+            plan.refusals
+                .iter()
+                .any(|r| r.starts_with(&format!("--expect {wrong}:"))),
+            "{wrong}: {plan:?}"
+        );
+        let report = close(&mut rig.ctx(), CloseTarget::Team, named(&[wrong]));
+        assert!(!report.refusals.is_empty(), "{wrong}: {report:?}");
+        assert!(dir.join("team.db").is_file(), "{wrong}");
+    }
+    let report = close(&mut rig.ctx(), CloseTarget::Team, named(&["short:1:done"]));
+    assert!(report.refusals.is_empty(), "{report:?}");
+    assert_eq!(report.stopped_at, None, "{report:?}");
+    assert!(!dir.exists());
+}
+
+/// The lead's newest reprompt was stored, its delivery failed, and its
+/// generation was given back: the member still shows its older `done`. A
+/// bare close refuses, because that result is not an answer to the
+/// reprompt. An expectation for the member accepts it.
+#[test]
+fn a_bare_close_refuses_after_a_reprompt_whose_generation_was_undone() {
+    let mut rig = team_of(&[("short", 2, Some(CompletionStatus::Done))]);
+    let now = rig.clock.now();
+    let short = role("short");
+    rig.store
+        .write(|tx| {
+            let member = tx.reader().member(&short)?;
+            let started_at = member.map_or(now, |m| m.gen_started_at);
+            let stored = tx.insert_message(
+                now,
+                &NewMessage {
+                    sender: Actor::Lead,
+                    kind: MessageType::Reprompt,
+                    re: None,
+                    commit: None,
+                    body: "part two".to_owned(),
+                    client_key: None,
+                    recipients: vec![Recipient::Member(short.clone())],
+                },
+            )?;
+            let id = stored.message.display_id.to_string();
+            tx.bump_generation(now, &short, &id)?;
+            tx.restore_generation(now, &short, 2, started_at, EventType::MemberReprompted)
+        })
+        .unwrap();
+    for opts in [CloseOpts::default(), named(&[])] {
+        let plan = plan_close_with(&rig.ctx(), CloseTarget::Team, &opts);
+        let why = plan.refusals.join("; ");
+        assert!(
+            why.contains("the lead's newest reprompt m001 started no generation for short"),
+            "{why}"
+        );
+    }
+    let report = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
+    assert!(!report.refusals.is_empty(), "{report:?}");
+    untouched(&rig);
+    let plan = plan_close_with(&rig.ctx(), CloseTarget::Team, &expecting("short:2:done"));
+    assert!(plan.refusals.is_empty(), "{plan:?}");
 }
