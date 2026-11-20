@@ -20,7 +20,7 @@ use std::time::Duration;
 
 use fixture::{Bed, role};
 use serde_json::Value;
-use teamwire_core::{Clock, CompletionStatus, DeliveryState, HoldInfo, Pid};
+use teamwire_core::{Clock, CompletionStatus, DeliveryState, HoldInfo, MemberKind, Pid};
 use teamwire_store::{NewVerifyRecord, Waiver};
 
 /// `teamwire export` with a cleared environment, so only `as_member` decides
@@ -201,6 +201,37 @@ fn export_covers_every_table() {
         .find(|r| r["type"] == "teamwire.verify")
         .unwrap();
     assert_eq!(verify["data"]["head_sha"], "abc123");
+}
+
+/// A member record carries `quiet` in effect and the set label, so a reader
+/// of an export never needs to know which kinds are quiet.
+#[test]
+fn a_member_record_carries_quiet_in_effect_and_the_set() {
+    let mut bed = Bed::new();
+    bed.add("api");
+    bed.add("hush");
+    bed.add_kind("rev", MemberKind::Reviewer);
+    bed.store
+        .write(|tx| tx.set_member_marks(&role("hush"), true, Some("rev1")))
+        .unwrap();
+
+    let out = export(&bed, false);
+    assert_eq!(out.status.code(), Some(0), "{out:?}");
+    let records: Vec<Value> = String::from_utf8(out.stdout)
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let member = |name: &str| {
+        let r = records
+            .iter()
+            .find(|r| r["type"] == "teamwire.member" && r["data"]["role"] == name)
+            .unwrap();
+        (r["data"]["quiet"].clone(), r["data"]["set"].clone())
+    };
+    assert_eq!(member("api"), (Value::Bool(false), Value::Null));
+    assert_eq!(member("hush"), (Value::Bool(true), Value::from("rev1")));
+    assert_eq!(member("rev"), (Value::Bool(true), Value::Null));
 }
 
 /// A recorded pid is half of the owner it names: the start time beside it is
