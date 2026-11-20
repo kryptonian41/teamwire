@@ -30,8 +30,8 @@ So 247 − 4 + 83 = 326. The 83 added entries are the draft entries of the
 2026-11-19 research report on the newest models. Each draft was checked
 against its page on 2026-11-20 before it went in. None of the 83 was left
 out: every page opened, and every model name, number and date in a draft
-matched its page. Seven drafts were reworded or corrected, and the table under
-"Drafts changed before they went in" lists them.
+matched its page. Some drafts were reworded or corrected before they went in.
+The table under "Drafts changed before they went in" lists the seven changes.
 
 The file's `as_of` moved from 2026-11-14 to 2026-11-20. Only the entries
 named in this note were read on 2026-11-20. Every other entry keeps the
