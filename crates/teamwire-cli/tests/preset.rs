@@ -329,7 +329,7 @@ fn the_plan_review_preset_is_one_plan_reviewer_in_a_pane() {
     assert_eq!(member["cwd"], "/abs/path/repo");
     assert_eq!(member["deadline_s"], 1200);
     assert!(member["task"].as_str().is_some_and(|t| !t.is_empty()));
-    assert_eq!(file["_rules"].as_array().unwrap().len(), 6);
+    assert_eq!(file["_rules"].as_array().unwrap().len(), 7);
 }
 
 /// A set step: three readers of one kind that share one `set` label and one
@@ -448,6 +448,20 @@ fn the_review_set_is_three_reviewers_and_a_reconciler() {
     }
     assert!(task_of(&doc, "reva").contains("quoting the brief line"));
     assert!(task_of(&doc, "revjoin").contains("The roles that own code are impla and implb"));
+}
+
+/// The single-reader presets point at the set step that may take their
+/// reader's place, and keep their one round.
+#[test]
+fn the_single_reader_presets_point_at_their_set_step() {
+    for (name, step) in [
+        ("implement-then-review", "`teamwire preset review-set`"),
+        ("plan-review", "`teamwire preset plan-review-set`"),
+    ] {
+        let rules = rules_text(name);
+        assert!(rules.contains(step), "{name}: {rules}");
+        assert!(rules.contains("A set reads once"), "{name}: {rules}");
+    }
 }
 
 /// Two set steps in one team must not share a role, because launch never
