@@ -24,12 +24,10 @@ pub struct TokenCounts {
     pub cost_micro_usd: u64,
 }
 
-#[expect(
-    clippy::trivially_copy_pass_by_ref,
-    reason = "serde's skip_serializing_if passes a reference"
-)]
-fn is_zero(n: &u64) -> bool {
-    *n == 0
+/// serde's `skip_serializing_if` hands the field by reference. Generic, so
+/// clippy does not ask for a by-value `u64`, which serde cannot call.
+fn is_zero<T: Default + PartialEq>(n: &T) -> bool {
+    *n == T::default()
 }
 
 impl TokenCounts {
