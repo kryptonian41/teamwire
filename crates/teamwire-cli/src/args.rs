@@ -346,6 +346,15 @@ pub(crate) struct CloseArgs {
     /// Clear a close lock whose owner pid is dead, and nothing else.
     #[arg(long)]
     pub(crate) clear_stale_lock: bool,
+    /// A result the close requires, as ROLE:GEN:STATUS, such as api:4:done.
+    /// Repeat it for each result. The close refuses unless the member is in
+    /// that generation and its newest result there has that status.
+    #[arg(long, value_name = "ROLE:GEN:STATUS", conflicts_with_all = ["role", "abandon", "clear_stale_lock"])]
+    pub(crate) expect: Vec<String>,
+    /// Close the team as it is although the lead's newest send was refused.
+    /// WHY is recorded as a close step.
+    #[arg(long, value_name = "WHY", conflicts_with_all = ["role", "clear_stale_lock"])]
+    pub(crate) abandon: Option<String>,
 }
 
 #[derive(Args)]

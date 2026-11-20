@@ -74,6 +74,14 @@ fn team_plan(ctx: &Ctx<'_>, team: &TeamRow, members: &[Member], opts: &CloseOpts
         plan.refusals
             .extend(facts::member_refusals(ctx, &team.name, members));
         plan.refusals.extend(crate::afk::report_refusal(ctx, team));
+        plan.refusals
+            .extend(crate::expect::outcome_refusals(ctx, team, members, opts));
+        if let Some(why) = &opts.abandon {
+            plan.steps.push(step(
+                "abandon",
+                format!("closing as it is (--abandon): {why}"),
+            ));
+        }
         let checked = live(members).count();
         plan.steps.push(step(
             "check",

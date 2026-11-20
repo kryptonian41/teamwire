@@ -105,7 +105,15 @@ async fn a_refused_send_says_in_its_text_that_nothing_was_sent() {
             ),
             "{said}"
         );
-        assert_eq!(rig.stored().1, before.1, "no message stored for {to}");
+        let after = rig.stored();
+        assert_eq!(after.1, before.1, "no message stored for {to}");
+        // Each refusal is recorded, so `teamwire close` can tell that the
+        // lead's newest send was refused.
+        assert_eq!(
+            after.0[before.0.len()..],
+            [EventType::MessageRefused],
+            "{to}"
+        );
     }
     // A missing recipient field is refused the same way.
     let result = call(
@@ -116,6 +124,17 @@ async fn a_refused_send_says_in_its_text_that_nothing_was_sent() {
     .await;
     assert_eq!(refused(&result), "invalid.argument");
     assert!(text(&result).starts_with("NOT SENT: "));
+    let refusals = rig
+        .store
+        .read(|tx| tx.events_of_type(EventType::MessageRefused))
+        .unwrap()
+        .items;
+    assert_eq!(refusals.len(), 4, "{refusals:?}");
+    assert!(
+        refusals.iter().all(|e| e.data["sender"] == "lead"),
+        "{refusals:?}"
+    );
+    assert_eq!(refusals[3].data["code"], "invalid_argument");
     // No generation moved.
     let gens: Vec<u32> = rig
         .store

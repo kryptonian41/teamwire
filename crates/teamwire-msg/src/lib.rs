@@ -43,7 +43,7 @@ pub use prove::prove_actor;
 pub use resend::resend;
 pub use roster::{RosterEntry, roster};
 pub use send::{
-    Stored, parse_type_logged, prove_actor_logged, record_refusal, send, send_with,
+    Stored, parse_type_logged, prove_actor_logged, record_invalid, record_refusal, send, send_with,
     send_with_write, watch_running,
 };
 pub use teamwire_store::token_hash;

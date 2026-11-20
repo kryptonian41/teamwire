@@ -228,7 +228,14 @@ fn run(
     args: JsonObject,
 ) -> Result<Reply, ToolFailure> {
     match tool {
-        "team_send" => send_tool(ctx, team, actor, parse(args)?),
+        "team_send" => {
+            // A malformed send by a proven sender is recorded as refused, as
+            // the rules' refusals are, so a close can tell it never went out.
+            let input = parse(args).inspect_err(|_| {
+                teamwire_msg::record_invalid(ctx, actor, None, &[]);
+            })?;
+            send_tool(ctx, team, actor, input)
+        }
         "team_resend" => {
             let input: ResendInput = parse(args)?;
             let to = input.to.as_deref().map(recipients).transpose()?;

@@ -2,7 +2,9 @@
 
 use std::process::ExitCode;
 
-use teamwire_close::{CloseOpts, ClosePlan, CloseReport, CloseStep, CloseTarget, StepOutcome};
+use teamwire_close::{
+    CloseOpts, ClosePlan, CloseReport, CloseStep, CloseTarget, Expected, StepOutcome,
+};
 use teamwire_core::{Role, TeamName, TeamState};
 
 use crate::cmd::shared::{
@@ -21,6 +23,8 @@ pub(crate) fn run(args: &CloseArgs, global: &Global, wiring: &Wiring) -> ExitCod
         keep_state,
         archive_to,
         clear_stale_lock,
+        expect,
+        abandon,
     } = args;
     let team = match TeamName::parse(team) {
         Ok(team) => team,
@@ -31,7 +35,24 @@ pub(crate) fn run(args: &CloseArgs, global: &Global, wiring: &Wiring) -> ExitCod
         Ok(None) => CloseTarget::Team,
         Err(e) => return fail("close", &e.to_string(), USAGE),
     };
+    let expect = match expect
+        .iter()
+        .map(|e| Expected::parse(e))
+        .collect::<Result<Vec<_>, _>>()
+    {
+        Ok(expect) => expect,
+        Err(why) => return fail("close", &why, USAGE),
+    };
+    if abandon.as_deref().is_some_and(|why| why.trim().is_empty()) {
+        return fail(
+            "close",
+            "--abandon needs the reason the team closes as it is",
+            USAGE,
+        );
+    }
     let opts = CloseOpts {
+        expect,
+        abandon: abandon.clone(),
         stop: *stop,
         unverified: *unverified,
         keep_state: *keep_state,
