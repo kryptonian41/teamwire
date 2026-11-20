@@ -4,10 +4,12 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use teamwire_core::{Role, TeamName};
-use teamwire_verify::{FileProblem, FlagId, VerifyError, VerifyOpts, VerifyRecord, VerifyReport};
+use teamwire_verify::{
+    FileProblem, FlagId, Pin, VerifyError, VerifyOpts, VerifyRecord, VerifyReport,
+};
 
 use crate::cmd::shared::{
-    Opening, PARTIAL, REFUSED, STORE, fail, refuse_member, say, with_ctx_using,
+    Opening, PARTIAL, REFUSED, STORE, fail, refuse_member, say, warn, with_ctx_using,
 };
 use crate::wiring::Wiring;
 use crate::{Global, USAGE, VerifyArgs};
@@ -20,6 +22,7 @@ pub(crate) fn run(args: &VerifyArgs, global: &Global, wiring: &Wiring) -> ExitCo
         reason,
         deep,
         repair_files,
+        pinned_in,
     } = args;
     let team = match TeamName::parse(team) {
         Ok(team) => team,
@@ -41,6 +44,12 @@ pub(crate) fn run(args: &VerifyArgs, global: &Global, wiring: &Wiring) -> ExitCo
         ..Opening::default()
     };
     with_ctx_using(global, wiring, &team, "verify", opening, |ctx| {
+        if let (Some(dir), Some(role)) = (pinned_in, &role) {
+            return match teamwire_verify::pin(ctx, role, dir) {
+                Ok(pin) => show_pin(&pin, &team),
+                Err(e) => fail("verify", &e.to_string(), error_code(&e)),
+            };
+        }
         if let (Some(flag), Some(reason), Some(role)) = (waive, reason, &role) {
             return match teamwire_verify::waive(ctx, role, &FlagId::new(flag), reason) {
                 Ok(()) => {
@@ -67,6 +76,34 @@ pub(crate) fn run(args: &VerifyArgs, global: &Global, wiring: &Wiring) -> ExitCo
         }
     })
     .unwrap_or_else(|code| code)
+}
+
+/// The pin's lines, with the team named in its advice. Exit 0 only when the
+/// clone sits on the commit verify recorded, or there is nothing to pin.
+fn show_pin(pin: &Pin, team: &TeamName) -> ExitCode {
+    let short = |sha: &Option<String>| sha.clone().unwrap_or_else(|| "unknown".to_owned());
+    if let Some(why) = &pin.nothing_to_pin {
+        say(&format!("{}: {why}\n", pin.role));
+        return ExitCode::SUCCESS;
+    }
+    if pin.holds() {
+        say(&format!(
+            "pinned: {} at {} (verify {}); the clone at {} is on that commit\n",
+            pin.role,
+            short(&pin.expected),
+            pin.verdict.as_deref().unwrap_or("unknown"),
+            pin.clone.display()
+        ));
+        return ExitCode::SUCCESS;
+    }
+    for problem in &pin.problems {
+        warn(&format!(
+            "NOT PINNED: {}",
+            problem.replace("<team>", team.as_str())
+        ));
+    }
+    warn("evidence from this clone is not evidence for the verified commit");
+    ExitCode::from(REFUSED)
 }
 
 fn error_code(e: &VerifyError) -> u8 {

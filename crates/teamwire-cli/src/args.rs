@@ -247,6 +247,11 @@ pub(crate) struct VerifyArgs {
     /// copies are reported, never rewritten.
     #[arg(long)]
     pub(crate) repair_files: bool,
+    /// Run no check: say whether the clone at DIR is on the commit the
+    /// newest verify of --role recorded, and that record is still the
+    /// member's newest commit. A closer runs it before it takes evidence.
+    #[arg(long, value_name = "DIR", requires = "role", conflicts_with_all = ["waive", "deep", "repair_files"])]
+    pub(crate) pinned_in: Option<PathBuf>,
 }
 
 #[derive(Args)]
