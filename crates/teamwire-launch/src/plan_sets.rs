@@ -29,6 +29,8 @@ struct Seat<'a> {
     family: ModelFamily,
     /// The planned member, for a member of this spec file.
     planned: Option<&'a PlannedMember>,
+    /// The store holds a completion of the member's current generation.
+    reported: bool,
 }
 
 impl Seat<'_> {
@@ -103,6 +105,7 @@ fn seats<'a>(cx: &'a Cx<'_>, members: &'a [PlannedMember]) -> Vec<Seat<'a>> {
                 model,
                 family: family_of(registry, &m.harness, model),
                 planned: None,
+                reported,
             });
         }
     }
@@ -113,6 +116,7 @@ fn seats<'a>(cx: &'a Cx<'_>, members: &'a [PlannedMember]) -> Vec<Seat<'a>> {
         model: m.spec.model.as_deref(),
         family: family_of(registry, &m.harness, m.spec.model.as_deref()),
         planned: Some(m),
+        reported: false,
     }));
     out
 }
@@ -133,6 +137,12 @@ pub(crate) fn set_warnings(cx: &Cx<'_>, members: &[PlannedMember], warnings: &mu
         .collect();
     for (label, readers) in sets.iter().filter(|(l, _)| touched.contains(*l)) {
         reader_warnings(label, readers, warnings);
+    }
+    for rec in seats
+        .iter()
+        .filter(|s| s.in_spec() && s.kind == MemberKind::Reconciler)
+    {
+        reconciler_warnings(rec, &sets, warnings);
     }
 }
 
@@ -202,5 +212,28 @@ fn reader_warnings(label: &str, readers: &[&Seat<'_>], warnings: &mut Vec<String
                 a.role, b.role
             ));
         }
+    }
+}
+
+/// The rules about one reconciler of the spec file: the last two rows of
+/// LCH-34.
+fn reconciler_warnings(
+    rec: &Seat<'_>,
+    sets: &BTreeMap<&str, Vec<&Seat<'_>>>,
+    warnings: &mut Vec<String>,
+) {
+    let Some((label, readers)) = rec.set.and_then(|l| sets.get_key_value(l)) else {
+        warnings.push(format!(
+            "set_reconciler_alone: {} is a reconciler with no set to read",
+            rec.role
+        ));
+        return;
+    };
+    for r in readers.iter().filter(|r| !r.reported) {
+        warnings.push(format!(
+            "set_reconciler_early: {} reconciles set {label}, but {} has not reported; add the \
+             reconciler after every reader has reported",
+            rec.role, r.role
+        ));
     }
 }

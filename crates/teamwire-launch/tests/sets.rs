@@ -1,11 +1,6 @@
-//! The set warnings of LCH-34: what launch says about the readers of a set
-//! and about a reconciler, for members of the spec file and for members the
-//! team already holds. Every rule warns; none refuses.
-
-#![expect(
-    clippy::unwrap_used,
-    reason = "helper functions in an integration-test file unwrap; a failure there fails the test"
-)]
+//! The set warnings of LCH-34 about the readers of a set: what launch says
+//! for members of the spec file and for members the team already holds.
+//! Every rule warns; none refuses.
 
 #[expect(
     dead_code,
@@ -15,49 +10,17 @@
 #[path = "support/common.rs"]
 mod common;
 
-use common::{Rig, pane_member, team_spec};
+#[expect(
+    dead_code,
+    reason = "each test binary uses a different part of the shared helpers"
+)]
+#[cfg(test)]
+#[path = "support/sets.rs"]
+mod sets;
+
+use common::{Rig, pane_member};
 use serde_json::{Value, json};
-use teamwire_core::{MemberState, Role};
-use teamwire_store::Store;
-
-const CLAUDE: &str = "claude-opus-5-5";
-const GPT: &str = "gpt-6.1-sol";
-const GEMINI: &str = "gemini-4-carbon";
-
-/// A quiet reviewer in set `set` on `model`, with the shared brief.
-fn reader(role: &str, model: Option<&str>, set: &str, cwd: &std::path::Path) -> Value {
-    let mut m = common::with(pane_member(role, role, cwd), "kind", json!("reviewer"));
-    m = common::with(m, "set", json!(set));
-    m = common::with(m, "task", json!("review the diff"));
-    if let Some(model) = model {
-        m = common::with(m, "model", json!(model));
-    }
-    m
-}
-
-/// The set warnings of a validation that passed.
-fn set_warnings(rig: &Rig, children: &[Value], add: bool) -> Vec<String> {
-    let plan = rig.validate(&team_spec("demo", children), add).unwrap();
-    plan.warnings
-        .into_iter()
-        .filter(|w| w.starts_with("set_"))
-        .collect()
-}
-
-/// Launches `children` as the first wave of team `demo`.
-fn launch(rig: &Rig, children: &[Value]) -> Store {
-    let plan = rig.validate(&team_spec("demo", children), false).unwrap();
-    rig.launch("demo", plan).1
-}
-
-fn fail(rig: &Rig, store: &mut Store, role: &str) {
-    use teamwire_core::Clock as _;
-    let at = rig.clock.now();
-    let role = Role::parse(role).unwrap();
-    store
-        .write(|tx| tx.set_member_state(at, &role, MemberState::Failed, &json!({})))
-        .unwrap();
-}
+use sets::{CLAUDE, GEMINI, GPT, fail, launch, reader, set_warnings};
 
 #[test]
 fn one_reader_is_a_set_too_small() {
@@ -231,8 +194,8 @@ fn a_team_with_no_set_label_gets_no_set_warning() {
     assert!(set_warnings(&rig, &[plain("a"), plain("b")], false).is_empty());
 }
 
-/// Example 1 of the brief: `reva` fails and never reports, and its
-/// replacement of the same family prints no `set_same_family`.
+/// `reva` fails and never reports, and the lead replaces it with `revd`
+/// of the same family: the pair prints no `set_same_family`.
 #[test]
 fn a_failed_reader_that_never_reported_counts_for_no_rule() {
     let rig = Rig::new();
