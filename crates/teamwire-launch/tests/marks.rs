@@ -259,3 +259,50 @@ fn a_quiet_investigators_seat_file_holds_the_quiet_parts() {
     );
     assert!(plain.contains(" send --to "), "{plain}");
 }
+
+/// A quiet implementer's own text tells it to ask with a question message,
+/// so its seat file says where that question goes instead. A reviewer's
+/// seat file keeps its quiet part as it was: the part ends, and the next
+/// part follows at once.
+#[test]
+fn a_quiet_implementers_seat_says_where_its_messages_go_and_a_reviewers_is_unchanged() {
+    let rig = Rig::new();
+    let cwd = rig.work.path();
+    let repo = rig.repo("proj");
+    let hush = common::with(worktree_member("hush", "Hush", &repo), "quiet", json!(true));
+    let rev = common::with(pane_member("rev", "Rev", cwd), "kind", json!("reviewer"));
+    let plan = rig
+        .validate(&team_spec("demo", &[hush, rev]), false)
+        .unwrap();
+    let (report, _store) = rig.launch("demo", plan);
+    assert!(
+        report
+            .members
+            .iter()
+            .all(|m| m.outcome == LaunchOutcome::Started),
+        "{report:?}"
+    );
+    let seat = |role: &str| {
+        std::fs::read_to_string(
+            rig.home
+                .path()
+                .join("teams/demo/contract")
+                .join(format!("{role}.md")),
+        )
+        .unwrap()
+    };
+    let sentence = "- Where the rules above tell you to send a message or to ask with a\n  question message, write the question in your report file instead.\n";
+    let (hush, rev) = (seat("hush"), seat("rev"));
+    assert!(hush.contains("You are the IMPLEMENTER"), "{hush}");
+    assert!(
+        hush.contains("Ask the lead for the change with a question message"),
+        "{hush}"
+    );
+    assert!(hush.contains(sentence), "{hush}");
+    assert!(rev.contains("You are the REVIEWER"), "{rev}");
+    assert!(!rev.contains(sentence), "{rev}");
+    assert!(
+        rev.contains("Everything goes in your\n  report file.\n\nHOW THIS TEAM WORKS TOGETHER"),
+        "{rev}"
+    );
+}

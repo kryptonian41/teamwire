@@ -25,6 +25,7 @@ const SCOPE_HEAD: &str = include_str!("../contracts/scope_head.md");
 const SCOPE_OWNS: &str = include_str!("../contracts/scope_owns.md");
 const SCOPE_CHECK: &str = include_str!("../contracts/scope_check.md");
 const TALKING_SILENT: &str = include_str!("../contracts/talking_silent.md");
+const TALKING_QUIET_SETTING: &str = include_str!("../contracts/talking_quiet_setting.md");
 const TALKING_HEAD: &str = include_str!("../contracts/talking_head.md");
 const TALKING_INFO: &str = include_str!("../contracts/talking_info.md");
 const TALKING_TEAMS: &str = include_str!("../contracts/talking_teams.md");
@@ -96,12 +97,16 @@ fn quiet_parts(kind: MemberKind, quiet: bool) -> bool {
 }
 
 /// Every member that talks sends every kind of information, to its own team
-/// and to other teams (MSG-1, MSG-20); a quiet member talks to no one.
+/// and to other teams (MSG-1, MSG-20); a quiet member talks to no one. The
+/// text of a kind that talks tells it to send messages, so a member of such
+/// a kind that the spec made quiet is told where those messages go instead.
 fn talking(kind: MemberKind, quiet: bool) -> String {
-    if quiet_parts(kind, quiet) {
+    if !quiet_parts(kind, quiet) {
+        [TALKING_HEAD, TALKING_INFO, TALKING_TAIL, TALKING_TEAMS].concat()
+    } else if kind.is_quiet() {
         TALKING_SILENT.to_owned()
     } else {
-        [TALKING_HEAD, TALKING_INFO, TALKING_TAIL, TALKING_TEAMS].concat()
+        [TALKING_SILENT, TALKING_QUIET_SETTING].concat()
     }
 }
 
