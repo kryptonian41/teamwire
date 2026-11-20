@@ -64,7 +64,10 @@ fn a_clipped_reprompt_answered_in_chat_is_held_once_then_finished_from_the_inbox
         .unwrap()
         .and_then(|m| m.session_id)
         .unwrap();
-    std::fs::write(w.home.path().join("a-session"), session.as_str()).unwrap();
+    assert!(w.sh_passes(
+        w.home.path(),
+        &format!("printf %s '{}' > a-session", session.as_str())
+    ));
     let text = format!(
         "{} then write {MARKER} in your report",
         "context ".repeat(40)
