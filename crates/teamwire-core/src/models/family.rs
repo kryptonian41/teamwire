@@ -17,6 +17,7 @@ string_enum! {
         Claude => "claude",
         Gpt => "gpt",
         Gemini => "gemini",
+        Gemma => "gemma",
         Grok => "grok",
         Deepseek => "deepseek",
         Kimi => "kimi",
@@ -29,12 +30,11 @@ string_enum! {
 }
 
 /// The vendor part of an `OpenRouter` id, `openrouter/<vendor>/<id>`, and
-/// the family it names. Google also lists Gemma under its name, so the
-/// `google` row needs an id that starts with `gemini` (see `model_family`).
+/// the family it names. Google is not a row: it makes two lines, Gemini and
+/// Gemma, so its id decides (`GOOGLE`).
 const VENDORS: &[(&str, ModelFamily)] = &[
     ("anthropic", ModelFamily::Claude),
     ("openai", ModelFamily::Gpt),
-    ("google", ModelFamily::Gemini),
     ("x-ai", ModelFamily::Grok),
     ("deepseek", ModelFamily::Deepseek),
     ("moonshotai", ModelFamily::Kimi),
@@ -52,6 +52,7 @@ const STARTS: &[(&str, ModelFamily)] = &[
     ("gpt-", ModelFamily::Gpt),
     ("chatgpt-", ModelFamily::Gpt),
     ("gemini", ModelFamily::Gemini),
+    ("gemma", ModelFamily::Gemma),
     ("grok", ModelFamily::Grok),
     ("deepseek", ModelFamily::Deepseek),
     ("kimi", ModelFamily::Kimi),
@@ -63,34 +64,46 @@ const STARTS: &[(&str, ModelFamily)] = &[
     ("llama", ModelFamily::Llama),
 ];
 
+/// The start of an `openrouter/google/<id>` id, and the family it names.
+/// Google makes two lines, so its vendor part alone names no family, and
+/// any other Google id is `Unknown`.
+const GOOGLE: &[(&str, ModelFamily)] = &[
+    ("gemini", ModelFamily::Gemini),
+    ("gemma", ModelFamily::Gemma),
+];
+
 /// The family of `model`, the string a spec's `model` holds, such as
 /// `openrouter/openai/gpt-6.2-astra` or `claude-bridge/claude-opus-5-5`.
 /// Reads no file and calls nothing.
 ///
-/// The string is lowercased and loses a trailing `:suffix`, such as pi's
-/// `:medium`. An `OpenRouter` id of three parts is placed by its vendor
+/// The string is lowercased. A trailing suffix such as pi's `:batch` stays,
+/// because both tables read only the start of an id. An `OpenRouter` id of
+/// three parts is placed by its vendor
 /// part alone, after a leading `~`, so `openrouter/openai/o3` is GPT
-/// although `o3` starts no row. Any other string is placed by the start of
-/// its `normalise_model` name. A string neither table places is `Unknown`.
+/// although `o3` starts no row. The vendor `google` is the one exception:
+/// its id must start with `gemini` or `gemma`. Any other string is placed
+/// by the start of its `normalise_model` name. A string neither table
+/// places is `Unknown`.
 pub fn model_family(model: &str) -> ModelFamily {
-    let lower = model.trim().to_ascii_lowercase();
-    let whole = lower.rsplit_once(':').map_or(lower.as_str(), |(id, _)| id);
+    let whole = model.trim().to_ascii_lowercase();
     let parts: Vec<&str> = whole.split('/').collect();
     if let ["openrouter", vendor, id] = parts.as_slice() {
         let vendor = vendor.strip_prefix('~').unwrap_or(vendor);
-        return VENDORS.iter().find(|(name, _)| *name == vendor).map_or(
-            ModelFamily::Unknown,
-            |&(_, family)| {
-                if family == ModelFamily::Gemini && !id.starts_with("gemini") {
-                    ModelFamily::Unknown
-                } else {
-                    family
-                }
-            },
-        );
+        if vendor == "google" {
+            return by_start(GOOGLE, id);
+        }
+        return VENDORS
+            .iter()
+            .find(|(name, _)| *name == vendor)
+            .map_or(ModelFamily::Unknown, |&(_, family)| family);
     }
-    let name = super::normalise_model(whole);
-    STARTS
+    by_start(STARTS, &super::normalise_model(&whole))
+}
+
+/// The family of the first row of `table` whose start begins `name`, else
+/// `Unknown`.
+fn by_start(table: &[(&str, ModelFamily)], name: &str) -> ModelFamily {
+    table
         .iter()
         .find(|(start, _)| name.starts_with(start))
         .map_or(ModelFamily::Unknown, |&(_, family)| family)
@@ -140,9 +153,19 @@ mod tests {
     }
 
     #[test]
-    fn a_google_model_that_is_not_gemini_is_unknown() {
+    fn a_google_gemma_model_is_gemma_not_gemini() {
         assert_eq!(
             model_family("openrouter/google/gemma-3-27b-it"),
+            ModelFamily::Gemma
+        );
+    }
+
+    #[test]
+    fn a_google_model_that_is_neither_gemini_nor_gemma_is_unknown() {
+        // The vendor part alone places any other vendor's model. Google's
+        // places only its two lines, so another Google id is not guessed.
+        assert_eq!(
+            model_family("openrouter/google/lyria-3"),
             ModelFamily::Unknown
         );
     }
@@ -238,6 +261,8 @@ mod tests {
             ("gpt-6.1-sol", ModelFamily::Gpt),
             ("chatgpt-4o-latest", ModelFamily::Gpt),
             ("gemini-4-carbon", ModelFamily::Gemini),
+            ("gemma-3-27b-it", ModelFamily::Gemma),
+            ("amazon-bedrock/google.gemma-4-31b", ModelFamily::Gemma),
             ("grok-5", ModelFamily::Grok),
             ("deepseek-r2", ModelFamily::Deepseek),
             ("global.moonshotai.kimi-k3", ModelFamily::Kimi),
