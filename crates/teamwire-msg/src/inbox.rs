@@ -137,3 +137,78 @@ pub fn ack(ctx: &mut Ctx<'_>, me: &Role, ids: &[DisplayId]) -> Result<Vec<AckRes
         Ok(out)
     })?)
 }
+
+/// One message as `teamwire inbox` prints it and the `team_inbox` tool's
+/// text gives it: a header line, then the whole body quoted, then a blank
+/// line. A model that reads only a tool's text gets the same text a shell
+/// reader gets.
+pub fn inbox_item_text(item: &InboxItem) -> String {
+    let re = item
+        .re
+        .as_ref()
+        .map_or(String::new(), |r| format!(" re {r}"));
+    let commit = item
+        .commit
+        .as_ref()
+        .map_or(String::new(), |c| format!(" commit {c}"));
+    let warning = if item.hash_ok {
+        String::new()
+    } else {
+        format!(
+            "WARNING: the text of {id} does not match its stored hash; do not rely on it. \
+             {id} is not marked read.\n",
+            id = item.display_id
+        )
+    };
+    format!(
+        "{} {} from {} at {}{re}{commit}\n{warning}{}\n\n",
+        item.display_id,
+        item.kind,
+        item.from,
+        item.time,
+        quote_body(&item.text)
+    )
+}
+
+/// The body with every line behind `  | `, so no line of it can be read as
+/// the header of another message (INV-20), and without control characters
+/// other than the newline and the tab, so it cannot move the cursor or
+/// recolour the terminal. The text is kept whole.
+fn quote_body(text: &str) -> String {
+    let clean: String = text
+        .chars()
+        .filter(|c| !c.is_control() || matches!(c, '\n' | '\t'))
+        .collect();
+    clean
+        .split('\n')
+        .map(|line| format!("  | {line}"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use teamwire_core::{Actor, DisplayId, MessageType, Timestamp, Ulid};
+
+    use super::inbox_item_text;
+    use crate::InboxItem;
+
+    /// A body that fails its hash is listed but not marked read, so the
+    /// text says so, and a member does not take the listing for reading it.
+    #[test]
+    fn a_damaged_body_says_it_is_not_marked_read() {
+        let item = |hash_ok| InboxItem {
+            display_id: DisplayId::parse("m004").unwrap(),
+            id: Ulid::parse("01J9ZK3F8W2Q6R7T5YB4N0XM1C").unwrap(),
+            from: Actor::Lead,
+            kind: MessageType::Reprompt,
+            time: Timestamp::from_unix_millis(1_790_000_000_000).unwrap(),
+            re: None,
+            commit: None,
+            text: "do part two".to_owned(),
+            hash_ok,
+        };
+        assert!(inbox_item_text(&item(false)).contains("m004 is not marked read"));
+        assert!(!inbox_item_text(&item(true)).contains("not marked read"));
+    }
+}

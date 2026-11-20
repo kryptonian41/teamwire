@@ -1591,6 +1591,36 @@ fn the_closer_task_lists_setups_and_has_a_restore_fallback() {
     assert!(task.contains("-e <path>"), "{task}");
 }
 
+/// A branch of the same name in the closer's clone can sit on the base, so
+/// the task and the rules pin each check to the sha verify printed and prove
+/// the clone is on it, as the closer's contract does.
+#[test]
+fn the_closer_preset_pins_each_check_to_the_verified_sha() {
+    let doc = preset_doc("closer");
+    let task = task_of(&doc, "closer");
+    let rules = doc["_rules"].to_string();
+    for (what, text) in [("task", task), ("rules", rules.as_ref())] {
+        assert!(
+            !text.contains("member's branch"),
+            "the closer {what} still checks out a branch: {text}"
+        );
+        assert!(
+            text.contains("git checkout --quiet --detach <sha>"),
+            "the closer {what} does not check out the sha: {text}"
+        );
+        assert!(
+            text.contains("--pinned-in"),
+            "the closer {what} does not prove the clone's commit: {text}"
+        );
+    }
+    assert!(
+        task.contains("teamwire verify myteam --role <role> --pinned-in <clone path>"),
+        "{task}"
+    );
+    assert!(task.contains("no `$(...)` or other placeholder"), "{task}");
+    assert!(task.contains("absent on the base"), "{task}");
+}
+
 /// The tdd and diagnosing-bugs skills are Claude Code plugins, so every note
 /// that names them says which members it is for.
 #[test]

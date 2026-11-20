@@ -39,11 +39,38 @@ fn success(reply: Reply) -> CallToolResult {
     result
 }
 
-fn refusal(failure: &ToolFailure) -> CallToolResult {
-    let mut result = CallToolResult::error(vec![ContentBlock::text(format!(
-        "{}: {}",
-        failure.code, failure.message
-    ))]);
+/// The text of a refused call. A refused send says first that nothing was
+/// sent: a lead once read the last error of a refused send as a receipt and
+/// went on to close the team (ADR 0059).
+///
+/// A refused resend names a message that may well exist and be delivered
+/// already, so its text says nothing was retried and tells the lead to look
+/// before sending: a fresh send of the same work is a second message, and a
+/// second reprompt starts a second generation. `resend_id` is the call's id.
+fn refusal(failure: &ToolFailure, tool: &str, resend_id: Option<&str>) -> CallToolResult {
+    let text = match tool {
+        "team_send" => format!(
+            "NOT SENT: {}: {}. No message was stored, no generation started, and there is no \
+             message id. Fix the call and send again; only a reply that names a message id and \
+             its recipient is a receipt.",
+            failure.code, failure.message
+        ),
+        "team_resend" => {
+            let stored = match resend_id {
+                Some(id) if failure.code == "refused.not_resendable" => format!(
+                    " {id} is stored as it was: read each recipient's state with team_status \
+                     before you send anything new, because a new send is a second message."
+                ),
+                _ => String::new(),
+            };
+            format!(
+                "NOT RESENT: {}: {}. Nothing was retried and no generation started.{stored}",
+                failure.code, failure.message
+            )
+        }
+        _ => format!("{}: {}", failure.code, failure.message),
+    };
+    let mut result = CallToolResult::error(vec![ContentBlock::text(text)]);
     result.structured_content = Some(failure.to_json());
     result
 }
@@ -86,16 +113,22 @@ impl ServerHandler for McpServer {
         let env = Arc::clone(&self.env);
         let caller = Arc::clone(&self.caller);
         let name = request.name.to_string();
+        let tool_name = name.clone();
         let args = request.arguments.unwrap_or_default();
+        let resend_id = args
+            .get("id")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned);
         let outcome =
             tokio::task::spawn_blocking(move || tools::call(&env, &caller, &name, args)).await;
         let result = match outcome {
             Ok(Ok(reply)) => success(reply),
-            Ok(Err(failure)) => refusal(&failure),
-            Err(e) => refusal(&ToolFailure::new(
-                "internal",
-                format!("the call did not finish: {e}"),
-            )),
+            Ok(Err(failure)) => refusal(&failure, &tool_name, resend_id.as_deref()),
+            Err(e) => refusal(
+                &ToolFailure::new("internal", format!("the call did not finish: {e}")),
+                &tool_name,
+                resend_id.as_deref(),
+            ),
         };
         Ok(result.into())
     }

@@ -22,3 +22,6 @@ TALKING TO THE TEAM
   A line that holds "... Full text: teamwire inbox" is only the
   start of the message. Read the inbox before you act on it. Reading it
   marks the message read; until then the parent sees it as unread.
+  A long reprompt arrives as a pointer with none of its text: read the
+  inbox first, then do all of it, report included. A reminder after a
+  tool call is not reading the message.

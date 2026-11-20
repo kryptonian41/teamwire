@@ -130,9 +130,12 @@ pub fn render_contract(p: &ContractParts<'_>) -> String {
     let finish = FINISH
         .replace("{teamwire}", &bin)
         .replace("{outbox_dir}", &p.outbox_dir.display().to_string());
+    let kind = kind_text(p.kind)
+        .replace("{teamwire}", &bin)
+        .replace("{team}", p.team.as_str());
     [
         head,
-        kind_text(p.kind).to_owned(),
+        kind,
         scope(p.check, p.owns),
         talking(p.kind, p.quiet)
             .replace("{teamwire}", &bin)
@@ -179,3 +182,5 @@ pub fn rewrite_contract(
 mod tests;
 #[cfg(test)]
 mod tests_findings;
+#[cfg(test)]
+mod tests_pin;

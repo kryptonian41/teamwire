@@ -228,26 +228,31 @@ fn run(
     args: JsonObject,
 ) -> Result<Reply, ToolFailure> {
     match tool {
-        "team_send" => send_tool(ctx, team, actor, parse(args)?),
+        "team_send" => {
+            // A malformed send by a proven sender is recorded as refused, as
+            // the rules' refusals are, so a close can tell it never went out.
+            let input = parse(args).inspect_err(|_| {
+                teamwire_msg::record_invalid(ctx, actor, None, &[]);
+            })?;
+            send_tool(ctx, team, actor, input)
+        }
         "team_resend" => {
             let input: ResendInput = parse(args)?;
             let to = input.to.as_deref().map(recipients).transpose()?;
             let report = resend(ctx, actor, &display_id(&input.id)?, to.as_deref())?;
-            report_reply(&report, None)
+            report_reply(&report, None, None)
         }
         "team_inbox" => {
             let input: InboxInput = parse(args)?;
             let role = member_only(actor, "inbox; its messages are typed into its session")?;
             let items = teamwire_msg::inbox(ctx, role, input.all)?;
             let mut value = json!({ "messages": to_value(&items)? });
-            if let (Some(map), true) = (
-                value.as_object_mut(),
-                items.iter().any(|i| i.from != Actor::Lead),
-            ) {
+            let peer = items.iter().any(|i| i.from != Actor::Lead);
+            if let (Some(map), true) = (value.as_object_mut(), peer) {
                 map.insert("note".to_owned(), json!(INBOX_NOTE));
             }
             Ok(Reply {
-                summary: format!("{} message(s)", items.len()),
+                summary: inbox_summary(&items, peer, input.all),
                 value,
             })
         }
@@ -313,8 +318,18 @@ fn send_tool(
     actor: &Actor,
     input: SendInput,
 ) -> Result<Reply, ToolFailure> {
-    let to = recipients(&input.to)?;
-    let re = input.re.as_deref().map(display_id).transpose()?;
+    // A recipient or `re` the server cannot read is refused after the
+    // sender was proven, so it is recorded as refused, as a missing field is
+    // (ADR 0059 decision 4).
+    let to = recipients(&input.to).inspect_err(|_| {
+        teamwire_msg::record_invalid(ctx, actor, None, &[]);
+    })?;
+    let re = input
+        .re
+        .as_deref()
+        .map(display_id)
+        .transpose()
+        .inspect_err(|_| teamwire_msg::record_invalid(ctx, actor, None, &to))?;
     let kind = parse_type_logged(ctx, actor, &input.kind, &to)
         .map_err(|r| ToolFailure::from(teamwire_msg::SendError::Refused(r)))?;
     let request = SendRequest {
@@ -334,10 +349,135 @@ fn send_tool(
         Ok(None) => json!({ "running": false }),
         Err(e) => json!({ "running": null, "error": e.to_string() }),
     });
-    report_reply(&report, watch)
+    // A replayed key returns the first message, so its stored type decides.
+    let kind = ctx
+        .store
+        .read(|tx| tx.message_by_display_id(&report.display_id))
+        .ok()
+        .flatten()
+        .map_or(kind, |m| m.kind);
+    let receipt = Receipt {
+        kind,
+        generations: if kind == MessageType::Reprompt {
+            generations(ctx, &report)
+        } else {
+            Vec::new()
+        },
+    };
+    report_reply(&report, watch, Some(&receipt))
 }
 
-fn report_reply(report: &SendReport, watch: Option<Value>) -> Result<Reply, ToolFailure> {
+/// What a send's text names beyond each recipient's state: the message
+/// type, and after a reprompt the generation this message started for each
+/// member and the member's generation now (ADR 0059). A reprompt whose
+/// delivery failed gave its generation back, and a replayed key started
+/// nothing new, so only the stored start event of this message names a
+/// generation the lead may check a result against.
+struct Receipt {
+    kind: MessageType,
+    generations: Vec<Target>,
+}
+
+/// One member recipient of a reprompt: the generation the message started
+/// and still holds (`None` when it started none or was undone), and the
+/// member's generation as stored now.
+#[derive(Debug, Clone, serde::Serialize)]
+struct Target {
+    to: String,
+    started: Option<u32>,
+    current: u32,
+}
+
+impl Target {
+    fn text(&self) -> String {
+        match self.started {
+            Some(g) if g == self.current => format!(", started generation {g}"),
+            Some(g) => format!(
+                ", started generation {g} (now in generation {})",
+                self.current
+            ),
+            None => format!(
+                ", no generation started: {} stays in generation {}",
+                self.to, self.current
+            ),
+        }
+    }
+}
+
+/// Each member recipient's start, read from the store after the send. A
+/// member that cannot be read is left out, and its part of the text names
+/// no generation.
+fn generations(ctx: &Ctx<'_>, report: &SendReport) -> Vec<Target> {
+    report
+        .deliveries
+        .iter()
+        .filter_map(|d| match &d.to {
+            Recipient::Member(role) => ctx
+                .store
+                .read(|tx| {
+                    let Some(m) = tx.member(role)? else {
+                        return Ok(None);
+                    };
+                    let started = tx.generation_started_by(role, report.display_id.as_str())?;
+                    Ok(Some(Target {
+                        to: role.as_str().to_owned(),
+                        started,
+                        current: m.generation,
+                    }))
+                })
+                .ok()
+                .flatten(),
+            Recipient::Lead | Recipient::Other(_) => None,
+        })
+        .collect()
+}
+
+/// The `team_inbox` text: each message whole, as `teamwire inbox` prints
+/// it. A model that reads only a tool's text, as some harnesses give it,
+/// must still get the messages.
+/// The inbox text. Its headline counts the messages this call marked read,
+/// not the ones it returned: with `all` it marks none, and a body that fails
+/// its hash is returned but stays unread. A member that took the listing as
+/// reading would still get the unread reprompt's hold.
+fn inbox_summary(items: &[teamwire_msg::InboxItem], peer: bool, all: bool) -> String {
+    if items.is_empty() {
+        return if all {
+            "no messages"
+        } else {
+            "no unread messages"
+        }
+        .to_owned();
+    }
+    let read = if all {
+        0
+    } else {
+        items.iter().filter(|i| i.hash_ok).count()
+    };
+    let marked = if read == items.len() {
+        "now marked read".to_owned()
+    } else if read == 0 {
+        "none marked read".to_owned()
+    } else {
+        format!(
+            "{read} now marked read, {} not marked read",
+            items.len() - read
+        )
+    };
+    let mut text = format!("{} message(s), {marked}:\n\n", items.len());
+    for item in items {
+        text.push_str(&teamwire_msg::inbox_item_text(item));
+    }
+    if peer {
+        text.push_str(INBOX_NOTE);
+    }
+    text.trim_end().to_owned()
+}
+
+fn report_reply(
+    report: &SendReport,
+    watch: Option<Value>,
+    receipt: Option<&Receipt>,
+) -> Result<Reply, ToolFailure> {
     let states: Vec<String> = report
         .deliveries
         .iter()
@@ -350,15 +490,24 @@ fn report_reply(report: &SendReport, watch: Option<Value>) -> Result<Reply, Tool
                 return format!("{}: held for handoff", d.to);
             }
             let reason = d.reason.map_or(String::new(), |r| format!(" ({r})"));
-            format!("{}: {}{reason}", d.to, state_word(d.state))
+            let generation = receipt
+                .and_then(|r| r.generations.iter().find(|s| s.to == d.to.as_str()))
+                .map_or(String::new(), Target::text);
+            format!("{}: {}{reason}{generation}", d.to, state_word(d.state))
         })
         .collect();
     let mut value = to_value(report)?;
     if let (Some(watch), Some(object)) = (watch, value.as_object_mut()) {
         object.insert("watch".to_owned(), watch);
     }
+    if let (Some(r), Some(object)) = (receipt, value.as_object_mut())
+        && r.kind == MessageType::Reprompt
+    {
+        object.insert("generations".to_owned(), to_value(&r.generations)?);
+    }
+    let sent = receipt.map_or(String::new(), |r| format!(" {} sent:", r.kind));
     Ok(Reply {
-        summary: format!("{} {}", report.display_id, states.join(", ")),
+        summary: format!("{}{sent} {}", report.display_id, states.join(", ")),
         value,
     })
 }
@@ -413,7 +562,7 @@ mod tests {
             ],
             duplicate_of_key: false,
         };
-        let reply = report_reply(&report, None).unwrap();
+        let reply = report_reply(&report, None, None).unwrap();
         assert_eq!(reply.summary, "m012 api: held for handoff, web: handed_off");
         assert_eq!(
             reply.value.pointer("/deliveries/0/state"),
