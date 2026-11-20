@@ -268,6 +268,7 @@ pub(crate) fn session_usage(file: &Path) -> Option<SessionUsage> {
                 output: count("output"),
                 cache_read: count("cacheRead"),
                 cache_creation: count("cacheWrite"),
+                cost_micro_usd: 0,
             });
     }
     (!totals.is_empty()).then_some(totals)

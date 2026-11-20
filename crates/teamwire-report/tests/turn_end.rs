@@ -740,7 +740,8 @@ impl teamwire_core::Harness for UsageHarness {
 }
 
 /// A member whose harness reads its own session file (pi) gets that
-/// reading on the delivering event, in the shape the metrics read.
+/// reading on the delivering event, in the shape the metrics read. Money
+/// rides only for a model whose harness recorded some.
 #[test]
 fn delivering_event_carries_the_usage_the_members_harness_reads() {
     let (mut rig, api) = finished_member();
@@ -752,6 +753,17 @@ fn delivering_event_carries_the_usage_the_members_harness_reads() {
             output: 400,
             cache_read: 3_000,
             cache_creation: 0,
+            cost_micro_usd: 0,
+        },
+    );
+    usage.insert(
+        "openai/gpt-6-astra".to_owned(),
+        teamwire_core::TokenCounts {
+            input: 3,
+            output: 45,
+            cache_read: 0,
+            cache_creation: 9_456,
+            cost_micro_usd: 120_480,
         },
     );
     let mut registry = teamwire_core::Registry::new();
@@ -771,6 +783,9 @@ fn delivering_event_carries_the_usage_the_members_harness_reads() {
     let delivering = &rig.events(EventType::ResultDelivering)[0];
     assert_eq!(
         delivering.data["usage"],
-        serde_json::json!({"gpt-5.5": {"input": 2000, "output": 400, "cache_read": 3000, "cache_creation": 0}})
+        serde_json::json!({
+            "gpt-5.5": {"input": 2000, "output": 400, "cache_read": 3000, "cache_creation": 0},
+            "openai/gpt-6-astra": {"input": 3, "output": 45, "cache_read": 0, "cache_creation": 9456, "cost_micro_usd": 120_480},
+        })
     );
 }

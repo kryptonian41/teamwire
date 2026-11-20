@@ -212,6 +212,7 @@ fn the_usage_sums_every_assistant_message_by_model() {
             output: 236,
             cache_read: 23_285,
             cache_creation: 24_976,
+            cost_micro_usd: 0,
         },
     );
     want.insert(
@@ -221,6 +222,7 @@ fn the_usage_sums_every_assistant_message_by_model() {
             output: 5,
             cache_read: 0,
             cache_creation: 0,
+            cost_micro_usd: 0,
         },
     );
     assert_eq!(
