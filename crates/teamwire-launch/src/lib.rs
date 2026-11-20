@@ -115,7 +115,7 @@ pub struct ValidPlan {
     pub new_refs: Vec<TicketRef>,
     /// `--add`: members join a running team.
     pub add: bool,
-    /// The warnings of LCH-9, LCH-10 and LCH-18, printed before launching.
+    /// The warnings of LCH-9, LCH-10, LCH-18 and LCH-34, printed before launching.
     pub warnings: Vec<String>,
     pub lead: LeadPlan,
     pub members: Vec<PlannedMember>,

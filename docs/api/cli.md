@@ -131,12 +131,41 @@ prints `would record refs ...` or `would append refs ...`, each ref as
 `provider:id`.
 
 Prints one line per member (`started`, `refused: <reason>`, `failed:
-<reason>`), the warnings of LCH-9 and LCH-18, a warning naming each file a
+<reason>`), the warnings of LCH-9, LCH-18 and LCH-34, a warning naming each file a
 member's setup created that launch added to `info/exclude` (LCH-24), and the
 watch command to run. Exit 2 when any member did not start (including when none started).
 When no member started, one more line follows `watch:`: `no member started;
 fix the cause and run teamwire launch --add --spec <spec>, or teamwire close
 <team>`. The team stays open.
+
+Launch and `--dry-run` also print the set warnings of LCH-34 on stderr, and
+never refuse for one. Each line is `warning: <code>: <text>`, for example
+`warning: set_too_small: set rev1 has one reader (reva); a set needs at least
+two`. A reader is a member with a `set` label that is not a `reconciler`. The
+rules read the members of the spec file and the members the team already
+holds. A stored reader that is `removed` or `failed` counts only when it
+reported before it left, so a replacement for a lost reader prints nothing. A
+rule about one member warns only for a member of the spec file, and a rule
+about two members only when one of them is in the spec file. Launch reads a
+reader's family with its harness (`Harness::model_family`), and a stored
+member's model from its newest `member.started` event. A team with no `set`
+label gets none of these warnings, except `set_reconciler_alone` for a
+reconciler with no label.
+
+| Code | When | Text |
+| --- | --- | --- |
+| `set_too_small` | A set has one reader. | `set <label> has one reader (<role>); a set needs at least two` |
+| `set_same_family` | Two readers of one set have the same known family. | `set <label>: <role> and <role> are both <family> models; a set needs a different family per reader` |
+| `set_family_unknown` | A reader names no model, or its family is `unknown`. | `set <label>: cannot tell the family of <role> (<model or "no model">); check it by eye` |
+| `set_mixed_kinds` | Two readers of one set differ in kind. | `set <label>: <role> is a <kind> and <role> is a <kind>; the readers of a set share one kind` |
+| `set_reader_not_quiet` | A reader is not quiet. | `set <label>: <role> may send messages; give it "quiet": true so the readers stay independent` |
+| `set_briefs_differ` | Two readers of one set, both in the spec file, have different brief text (`task_file` content or `task`). | `set <label>: <role> and <role> have different briefs; the readers of a set get the same brief` |
+| `set_reconciler_alone` | A `reconciler` has no set label, or a label that no reader carries. | `<role> is a reconciler with no set to read` |
+| `set_reconciler_early` | A `reconciler` is launched while a reader of its set is in the same spec file, or is in the team with no completion of its current generation. One line per such reader. | `<role> reconciles set <label>, but <role> has not reported; add the reconciler after every reader has reported` |
+
+A spec file that holds the readers and their reconciler, as a preset does,
+prints `set_reconciler_early` for each reader. Launch the reconciler with
+`--add` after every reader has reported.
 
 On an AFK team (ADR 0025), `--add` accepts a team that has no members yet.
 Past the team's budget, each new `implementer` prints `<role>: refused:
