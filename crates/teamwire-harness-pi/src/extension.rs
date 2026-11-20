@@ -269,10 +269,15 @@ function args(...rest: string[]): string[] {
 }
 
 export default function (pi: ExtensionAPI) {
+  // `direct`, so the model is given team_inbox, team_done and the rest as
+  // tools (mcp__teamwire__team_*), as the contract names them. pi's default,
+  // `codemode`, reaches them only from a script.
   pi.registerMcpServer("teamwire", {
     command: TW.bin,
     args: args("mcp"),
     env: { TEAMWIRE_TOKEN_FILE: TW.env.TEAMWIRE_TOKEN_FILE },
+    exposure: "direct",
+    description: "teamwire: read your messages (team_inbox), send one (team_send), record your result (team_done).",
   });
 
   const always = () => true;
@@ -380,6 +385,24 @@ mod tests {
             ..values()
         };
         assert_eq!(config_of(&render(&v))["bin"], "/odd\"dir\n/teamwire");
+    }
+
+    /// pi 1.5.0 gives an MCP server `codemode` exposure by default: its
+    /// tools are not declared to the model, which reaches them only through
+    /// a script. A member told to call `team_inbox` and `team_done` then
+    /// finds no such tool and falls back to the shell, or to nothing. The
+    /// member's server is `direct`, as the lead's is (ADR 0030 point 3).
+    #[test]
+    fn the_members_mcp_server_declares_its_tools_directly() {
+        let text = render(&values());
+        let start = text
+            .find("pi.registerMcpServer(\"teamwire\"")
+            .expect("the member registers its server");
+        let block = &text[start..];
+        let end = block.find("});").expect("the registration ends");
+        let block = &block[..end];
+        assert!(block.contains("exposure: \"direct\""), "{block}");
+        assert!(block.contains("description:"), "{block}");
     }
 
     #[test]
