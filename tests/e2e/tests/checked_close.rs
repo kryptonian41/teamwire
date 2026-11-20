@@ -1,8 +1,9 @@
 //! ADR 0059, through the real binary: a member blocked in generation 1, a
 //! reprompt the lead sends to a word that is no role, then the close. A
 //! bare close refuses, so a refused reprompt is never archived as a
-//! finished generation; `--expect` checks the result the lead needs, and a
-//! close whose expectation holds runs.
+//! finished generation. `--expect` checks the result the lead needs, but an
+//! expectation of the older result does not answer the refused reprompt:
+//! only a new reprompt to that member or `--abandon` does.
 
 use std::time::Duration;
 
@@ -106,12 +107,26 @@ fn a_bare_close_after_a_refused_reprompt_refuses_and_a_checked_close_decides() {
         run.all()
     );
 
-    // The lead that wants the blocked result says so, and the close runs.
+    // The expectation of the blocked result matches, but the reprompt it
+    // followed is still unanswered for short: the close refuses.
     let run = closing(&["--expect", "short:1:blocked"]);
+    assert_eq!(run.code, 1, "{}", run.all());
+    assert!(
+        run.err
+            .contains("short's newest reprompt from the lead was refused (unknown_recipient"),
+        "{}",
+        run.all()
+    );
+    assert_eq!(open(), TeamState::Open);
+    assert!(!w.home.path().join("archive").exists());
+
+    // The lead that wants the blocked result closes the team as it is, on
+    // purpose, and the close runs.
+    let run = closing(&["--abandon", "the user stopped the work"]);
     assert_eq!(run.code, 0, "{}", run.all());
     assert!(
         run.out
-            .contains("expect: results as expected: short:1:blocked"),
+            .contains("abandon: closing as it is (--abandon): the user stopped the work"),
         "{}",
         run.all()
     );

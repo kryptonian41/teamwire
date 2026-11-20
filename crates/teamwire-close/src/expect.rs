@@ -16,12 +16,21 @@
 //! `--abandon <why>` closes the team as it is, on purpose, with the reason
 //! recorded. A close whose members all finished `done`, or never reported,
 //! runs as before. The lead's refused newest send is still named too.
+//!
+//! Each started member's newest reprompt from the lead is checked on its
+//! own. When it was refused, or its generation was given back, the member's
+//! result answers an older task. Only a new reprompt to that member that
+//! starts its generation answers it, or `--abandon`. A later message to
+//! anyone else, a note to the member, or an `--expect` of the older result
+//! does not.
 
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use teamwire_core::{CompletionStatus, EventType, Member, MemberState, Role, TeamName};
+use teamwire_core::{
+    CompletionStatus, EventType, Member, MemberState, MessageType, Recipient, Role, TeamName,
+};
 use teamwire_store::{Ctx, StoreError};
 
 /// One `--expect role:generation:status`.
@@ -76,7 +85,9 @@ impl fmt::Display for Expected {
 ///   while an older one has. Only an `--expect` naming that member
 ///   acknowledges it; an expectation about another member does not;
 /// - without `--abandon`, a refused newest send by the lead, unless an
-///   `--expect` names each member it was meant for.
+///   `--expect` names each member it was meant for;
+/// - without `--abandon`, each started member whose newest reprompt from
+///   the lead was refused or started no generation.
 ///
 /// A store that cannot be read refuses, naming the error, since a check
 /// that did not run proves nothing.
@@ -91,7 +102,7 @@ pub(crate) fn outcome_refusals(
         if opts.abandon.is_none() {
             out.extend(unacknowledged(ctx, &team.name, members, &opts.expect)?);
             out.extend(refused_send(ctx, &team.name, members, &opts.expect)?);
-            out.extend(undone_reprompt(ctx, &team.name, members, &opts.expect)?);
+            out.extend(unanswered_reprompts(ctx, &team.name, members)?);
         }
         Ok(out)
     })();
@@ -286,57 +297,122 @@ pub(crate) fn refused_send(
     )))
 }
 
-/// The refusal of a close whose lead's newest stored message is a reprompt
-/// that started no generation for some member it was sent to: its delivery
-/// failed, and the generation was given back, so the member's result is
-/// older than the reprompt (ADR 0059). `None` when the newest message is no
-/// reprompt, when it started a generation for each started recipient, or
-/// when an expectation names each recipient it did not start one for.
-pub(crate) fn undone_reprompt(
+/// The lead's newest reprompt to one member, as the store holds it.
+enum Newest {
+    /// The rules refused it: it was never stored, and started nothing.
+    Refused { code: String, at: String },
+    /// It was stored as message `id`.
+    Stored { id: String },
+}
+
+/// The refusals for each started member whose newest reprompt from the lead
+/// is unanswered: it was refused, or it was stored but started no
+/// generation, because its delivery failed and the generation was given
+/// back (ADR 0059). Each member is checked on its own. A note, a finding or
+/// a reprompt to another member is no answer, and an `--expect` of the
+/// member's older result is none either: only a new reprompt to the same
+/// member that starts its generation is, and the outcome checks then wait
+/// for that generation's result. A refused send whose type was never read
+/// counts as a reprompt, since it may have been one. A refused send that
+/// named no started member was meant for each of them.
+pub(crate) fn unanswered_reprompts(
     ctx: &Ctx<'_>,
     team: &TeamName,
     members: &[Member],
-    expected: &[Expected],
-) -> Result<Option<String>, StoreError> {
+) -> Result<Vec<String>, StoreError> {
+    let started: Vec<&Member> = members
+        .iter()
+        .filter(|m| m.state == MemberState::Started)
+        .collect();
     ctx.store.read(|tx| {
-        let newest = tx
-            .events_of_type(EventType::MessageSent)?
-            .items
-            .into_iter()
-            .rfind(|e| e.data.get("sender_kind").and_then(Value::as_str) == Some("lead"));
-        let Some(ulid) = newest.and_then(|e| e.subject) else {
-            return Ok(None);
+        let mut newest: Vec<Option<(u64, Newest)>> = started.iter().map(|_| None).collect();
+        let mut note = |at: usize, seq: u64, what: Newest| {
+            if let Some(slot) = newest.get_mut(at)
+                && slot.as_ref().is_none_or(|(s, _)| *s < seq)
+            {
+                *slot = Some((seq, what));
+            }
         };
-        let Some(message) = tx.message(&ulid)? else {
-            return Ok(None);
+        let text = |e: &teamwire_core::Event, key: &str| {
+            e.data.get(key).and_then(Value::as_str).map(str::to_owned)
         };
-        if message.kind != teamwire_core::MessageType::Reprompt {
-            return Ok(None);
-        }
-        let id = message.display_id.as_str();
-        let mut missed = Vec::new();
-        for m in members.iter().filter(|m| m.state == MemberState::Started) {
-            if tx
-                .delivery(&ulid, &teamwire_core::Recipient::Member(m.role.clone()))?
-                .is_none()
-                || expected.iter().any(|e| e.role == m.role)
+        for e in tx.events_of_type(EventType::MessageRefused)?.items {
+            let kind = text(&e, "type");
+            if text(&e, "sender").as_deref() != Some("lead")
+                || kind.is_some_and(|k| k != MessageType::Reprompt.as_str())
             {
                 continue;
             }
-            if tx.generation_started_by(&m.role, id)?.is_none() {
-                missed.push(format!("{} (generation {})", m.role, m.generation));
+            let to: Vec<&str> = e
+                .data
+                .get("to")
+                .and_then(Value::as_array)
+                .map(|a| a.iter().filter_map(Value::as_str).collect())
+                .unwrap_or_default();
+            let named = started.iter().any(|m| to.contains(&m.role.as_str()));
+            for (at, m) in started.iter().enumerate() {
+                if !named || to.contains(&m.role.as_str()) {
+                    let code = text(&e, "code").unwrap_or_else(|| "unknown".to_owned());
+                    note(
+                        at,
+                        e.seq,
+                        Newest::Refused {
+                            code,
+                            at: e.time.to_string(),
+                        },
+                    );
+                }
             }
         }
-        if missed.is_empty() {
-            return Ok(None);
+        for e in tx.events_of_type(EventType::MessageSent)?.items {
+            if text(&e, "sender_kind").as_deref() != Some("lead") {
+                continue;
+            }
+            let Some(ulid) = e.subject else { continue };
+            let Some(message) = tx.message(&ulid)? else {
+                continue;
+            };
+            if message.kind != MessageType::Reprompt {
+                continue;
+            }
+            for (at, m) in started.iter().enumerate() {
+                if tx
+                    .delivery(&ulid, &Recipient::Member(m.role.clone()))?
+                    .is_some()
+                {
+                    let id = message.display_id.as_str().to_owned();
+                    note(at, e.seq, Newest::Stored { id });
+                }
+            }
         }
-        Ok(Some(format!(
-            "the lead's newest reprompt {id} started no generation for {who}: its delivery \
-             failed and the generation was given back, so the result there answers an older \
-             task. Check each result with `teamwire status {team}`, send the reprompt again or \
-             close with --expect <role>:<generation>:<status> for each result you need, or with \
-             --abandon \"<why>\" to close the team as it is",
-            who = missed.join(", "),
-        )))
+        let mut out = Vec::new();
+        for (m, newest) in started.iter().zip(newest) {
+            let role = &m.role;
+            let what = match newest {
+                None => continue,
+                Some((_, Newest::Stored { id })) => {
+                    if tx.generation_started_by(role, &id)?.is_some() {
+                        continue;
+                    }
+                    format!(
+                        "{id}, started no generation: its delivery failed and the generation \
+                         was given back"
+                    )
+                }
+                Some((_, Newest::Refused { code, at })) => {
+                    format!("was refused ({code}, at {at}) and started no generation")
+                }
+            };
+            out.push(format!(
+                "{role}'s newest reprompt from the lead{sep}{what}, so {role}'s result in \
+                 generation {g} answers an older task. A note, a reprompt to another member or \
+                 an --expect of that older result does not answer it: reprompt {role} again and \
+                 wait for its result (check with `teamwire status {team}`), or close with \
+                 --abandon \"<why>\" to close the team as it is",
+                sep = if what.starts_with('m') { ", " } else { " " },
+                g = m.generation,
+            ));
+        }
+        Ok(out)
     })
 }

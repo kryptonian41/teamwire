@@ -18,7 +18,9 @@ fn role(name: &str) -> Role {
     Role::parse(name).unwrap_or_else(|e| unreachable!("{name} is a role: {e}"))
 }
 
-/// `short` in generation `generation` with a result of `status` there.
+/// `short` in generation `generation` with a result of `status` there. Each
+/// generation it moves up is started by a stored lead reprompt, as a send
+/// starts it.
 fn result_in(
     tx: &Tx<'_>,
     rig_now: teamwire_core::Timestamp,
@@ -31,7 +33,8 @@ fn result_in(
         .member(&short)?
         .is_some_and(|m| m.generation < generation)
     {
-        tx.bump_generation(rig_now, &short, "m001")?;
+        let id = lead_reprompt(tx, rig_now, &short)?;
+        tx.bump_generation(rig_now, &short, &id)?;
     }
     tx.insert_completion(
         rig_now,
@@ -45,6 +48,27 @@ fn result_in(
         },
     )?;
     Ok(())
+}
+
+/// Stores a lead reprompt to `to` and returns its display id.
+fn lead_reprompt(
+    tx: &Tx<'_>,
+    now: teamwire_core::Timestamp,
+    to: &Role,
+) -> Result<String, StoreError> {
+    let stored = tx.insert_message(
+        now,
+        &NewMessage {
+            sender: Actor::Lead,
+            kind: MessageType::Reprompt,
+            re: None,
+            commit: None,
+            body: "the next part".to_owned(),
+            client_key: None,
+            recipients: vec![Recipient::Member(to.clone())],
+        },
+    )?;
+    Ok(stored.message.display_id.to_string())
 }
 
 /// The team of the case that was seen: `short` blocked in generation 3,
@@ -150,6 +174,12 @@ fn a_message_the_lead_stored_after_the_refusal_answers_the_refused_send() {
     // The blocked result still needs a decision.
     assert!(
         why.contains("short's current result is blocked (generation 3)"),
+        "{why}"
+    );
+    // The note answers the newest-send check only. The reprompt it followed
+    // is still unanswered for short: a note asks for no new work.
+    assert!(
+        why.contains("short's newest reprompt from the lead was refused (unknown_recipient"),
         "{why}"
     );
 }
@@ -469,6 +499,55 @@ fn a_refused_send_is_answered_only_by_an_expectation_for_each_member_it_was_mean
         ],
         ..CloseOpts::default()
     };
+    // The expectations answer the newest-send check, but each member's
+    // reprompt is still unanswered: only a new reprompt to it answers that.
+    let plan = plan_close_with(&rig.ctx(), CloseTarget::Team, &both);
+    assert!(
+        !plan
+            .refusals
+            .iter()
+            .any(|r| r.contains("newest send was refused")),
+        "{plan:?}"
+    );
+    for who in ["short", "web"] {
+        assert!(
+            plan.refusals.iter().any(|r| r.starts_with(&format!(
+                "{who}'s newest reprompt from the lead was refused (unknown_recipient"
+            ))),
+            "{who}: {plan:?}"
+        );
+    }
+    let report = close(&mut rig.ctx(), CloseTarget::Team, both);
+    assert!(report.steps.is_empty(), "{report:?}");
+    untouched(&rig);
+
+    rig.store
+        .write(|tx| {
+            for (who, generation) in [("short", 3), ("web", 2)] {
+                let id = lead_reprompt(tx, now, &role(who))?;
+                tx.bump_generation(now, &role(who), &id)?;
+                tx.insert_completion(
+                    now,
+                    &NewCompletion {
+                        role: role(who),
+                        generation,
+                        status: CompletionStatus::Done,
+                        summary: "finished".to_owned(),
+                        final_message: None,
+                        final_source: FinalSource::None,
+                    },
+                )?;
+            }
+            Ok(())
+        })
+        .unwrap();
+    let both = CloseOpts {
+        expect: vec![
+            Expected::parse("web:2:done").unwrap(),
+            Expected::parse("short:3:done").unwrap(),
+        ],
+        ..CloseOpts::default()
+    };
     let report = close(&mut rig.ctx(), CloseTarget::Team, both);
     assert_eq!(report.stopped_at, None, "{report:?}");
     assert!(report.refusals.is_empty(), "{report:?}");
@@ -544,7 +623,8 @@ fn an_expectation_is_checked_when_a_kept_closed_team_is_closed_again() {
 /// The lead's newest reprompt was stored, its delivery failed, and its
 /// generation was given back: the member still shows its older `done`. A
 /// bare close refuses, because that result is not an answer to the
-/// reprompt. An expectation for the member accepts it.
+/// reprompt. An expectation of that older result does not answer it either;
+/// `--abandon` closes the team as it is.
 #[test]
 fn a_bare_close_refuses_after_a_reprompt_whose_generation_was_undone() {
     let mut rig = team_of(&[("short", 2, Some(CompletionStatus::Done))]);
@@ -575,13 +655,25 @@ fn a_bare_close_refuses_after_a_reprompt_whose_generation_was_undone() {
         let plan = plan_close_with(&rig.ctx(), CloseTarget::Team, &opts);
         let why = plan.refusals.join("; ");
         assert!(
-            why.contains("the lead's newest reprompt m001 started no generation for short"),
+            why.contains("short's newest reprompt from the lead, m001, started no generation"),
             "{why}"
         );
     }
     let report = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
     assert!(!report.refusals.is_empty(), "{report:?}");
     untouched(&rig);
+    // An expectation of the older result does not answer the reprompt.
     let plan = plan_close_with(&rig.ctx(), CloseTarget::Team, &expecting("short:2:done"));
+    assert!(
+        plan.refusals
+            .iter()
+            .any(|r| r.contains("short's newest reprompt from the lead, m001")),
+        "{plan:?}"
+    );
+    let abandon = CloseOpts {
+        abandon: Some("short's work stopped".to_owned()),
+        ..CloseOpts::default()
+    };
+    let plan = plan_close_with(&rig.ctx(), CloseTarget::Team, &abandon);
     assert!(plan.refusals.is_empty(), "{plan:?}");
 }
