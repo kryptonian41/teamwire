@@ -284,6 +284,121 @@ fn the_leads_note_and_reprompt_reach_a_plan_reviewer() {
     assert_eq!(rig.host.submitted(&plan).len(), 2);
 }
 
+/// The team rig with a reconciler, `rec`, and an investigator whose spec
+/// set `quiet`, `hush`. The investigator's kind talks; its setting makes it
+/// quiet.
+fn quiet_rig() -> (Rig, [teamwire_core::Place; 2]) {
+    let mut rig = team_rig();
+    let rec = rig.add_member("rec", MemberKind::Reconciler);
+    let hush = rig.add_member("hush", MemberKind::Investigator);
+    rig.store
+        .write(|tx| tx.set_member_marks(&role("hush"), true, None))
+        .unwrap();
+    (rig, [rec, hush])
+}
+
+const QUIET: [&str; 2] = ["rec", "hush"];
+
+#[test]
+fn a_reconciler_and_a_quiet_investigator_send_nothing_of_any_type() {
+    let (mut rig, _) = quiet_rig();
+    // A real question asked of each, so an answer fails on the sender and
+    // not on a missing question.
+    for (n, target) in QUIET.iter().enumerate() {
+        let ask = rig.request("lead", &[target], MessageType::Question, &format!("q{n}?"));
+        send(&mut rig.ctx(), ask).unwrap();
+    }
+    for (n, from) in QUIET.iter().enumerate() {
+        for kind in MessageType::ALL.iter().copied() {
+            let mut req = rig.request(from, &["lead"], kind, "x");
+            req.commit = Some(FULL_SHA.to_owned());
+            req.re = (kind == MessageType::Answer).then(|| id(&format!("m00{}", n + 1)));
+            assert_eq!(
+                refused(send(&mut rig.ctx(), req)),
+                Some(Refusal::TypeNotAllowed),
+                "{from} {kind}"
+            );
+        }
+        // Not even to a member that talks.
+        let req = rig.request(from, &["api"], MessageType::Finding, "x");
+        assert_eq!(
+            refused(send(&mut rig.ctx(), req)),
+            Some(Refusal::TypeNotAllowed),
+            "{from} to api"
+        );
+    }
+    // Only the lead's two questions are stored, and no git command ran.
+    let stored = rig
+        .store
+        .read(|tx| {
+            tx.messages(&teamwire_store::MessageFilter::default())?
+                .all_or_corrupt()
+        })
+        .unwrap();
+    let senders: Vec<&str> = stored.iter().map(|m| m.sender.as_str()).collect();
+    assert_eq!(senders, ["lead", "lead"]);
+    assert!(rig.platform.runs().is_empty());
+}
+
+#[test]
+fn members_may_not_message_a_reconciler_or_a_quiet_investigator() {
+    let (mut rig, _) = quiet_rig();
+    for target in QUIET {
+        for from in ["api", "scout"] {
+            for kind in [
+                MessageType::Notice,
+                MessageType::Finding,
+                MessageType::Question,
+            ] {
+                let mut req = rig.request(from, &[target], kind, "x");
+                req.commit = Some(FULL_SHA.to_owned());
+                assert_eq!(
+                    refused(send(&mut rig.ctx(), req)),
+                    Some(Refusal::RecipientNotAllowed),
+                    "{from} {kind} to {target}"
+                );
+            }
+        }
+    }
+    assert!(nothing_stored(&rig));
+    assert!(rig.platform.runs().is_empty());
+}
+
+#[test]
+fn the_leads_note_and_reprompt_reach_a_reconciler_and_a_quiet_investigator() {
+    let (mut rig, places) = quiet_rig();
+    for (target, place) in QUIET.iter().zip(&places) {
+        for kind in [MessageType::Note, MessageType::Reprompt] {
+            let req = rig.request("lead", &[target], kind, &format!("a {kind} for {target}"));
+            let report = send(&mut rig.ctx(), req).unwrap();
+            assert_eq!(
+                only(&report).state,
+                RecipientState::HandedOff,
+                "{kind} to {target}"
+            );
+        }
+        assert_eq!(rig.host.submitted(place).len(), 2, "{target}");
+    }
+}
+
+/// The setting is read when the message is sent: an investigator talks
+/// until its row says `quiet`.
+#[test]
+fn an_investigator_talks_until_its_quiet_mark_is_set() {
+    let mut rig = team_rig();
+    rig.add_member("hush", MemberKind::Investigator);
+    let req = rig.request("hush", &["api"], MessageType::Finding, "found it");
+    assert!(send(&mut rig.ctx(), req).is_ok());
+    rig.store
+        .write(|tx| tx.set_member_marks(&role("hush"), true, None))
+        .unwrap();
+    let req = rig.request("hush", &["api"], MessageType::Finding, "found more");
+    assert_eq!(
+        refused(send(&mut rig.ctx(), req)),
+        Some(Refusal::TypeNotAllowed)
+    );
+}
+
 #[test]
 fn only_the_lead_sends_a_reprompt_or_a_note() {
     let mut rig = team_rig();

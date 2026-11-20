@@ -334,6 +334,29 @@ fn the_user_reaches_no_reviewer_closer_or_plan_reviewer() {
     }
 }
 
+/// The user's note and reprompt reach no quiet member: not a reconciler,
+/// and not an investigator whose spec set `quiet`.
+#[test]
+fn the_user_reaches_no_reconciler_or_quiet_investigator() {
+    let mut rig = full_rig();
+    rig.add_member("rec", MemberKind::Reconciler);
+    rig.add_member("hush", MemberKind::Investigator);
+    rig.store
+        .write(|tx| tx.set_member_marks(&role("hush"), true, None))
+        .unwrap();
+    for target in ["rec", "hush"] {
+        for kind in [MessageType::Note, MessageType::Reprompt] {
+            assert_eq!(
+                user_send(&mut rig, &[target], kind, "look again"),
+                Err(SendError::Refused(Refusal::RecipientNotAllowed)),
+                "{kind} to {target}"
+            );
+        }
+    }
+    // The investigator without the setting still hears the user.
+    assert!(user_send(&mut rig, &["scout"], MessageType::Note, "look again").is_ok());
+}
+
 #[test]
 fn the_user_reprompts_no_lead_and_writes_to_no_other_team() {
     let mut rig = full_rig();
