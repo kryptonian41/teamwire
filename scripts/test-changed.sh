@@ -44,7 +44,10 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) dry=1 ;;
     --file)
-      [ $# -ge 2 ] && [ -n "$2" ] || usage
+      if [ $# -lt 2 ] || [ -z "$2" ]; then
+        echo "test-changed: --file needs a path" >&2
+        usage
+      fi
       given="$given
 ${2#./}"
       shift

@@ -125,6 +125,10 @@ fn a_file_flag_without_a_path_is_a_usage_error() {
         .output()
         .expect("bash runs");
     assert_eq!(out.status.code(), Some(3));
+    // Only this case prints the message. An unknown flag also exits 3, so the
+    // exit code alone would pass on a script that has no --file flag.
+    let err = String::from_utf8(out.stderr).expect("utf-8");
+    assert!(err.contains("test-changed: --file needs a path"), "{err}");
 }
 
 /// A file of the repository that does not exist, named by a relative path
