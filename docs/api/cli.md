@@ -100,9 +100,10 @@ on one of them is refused. `"set": "rev1"` puts the member in the set `rev1`
 of its team (ADR 0057). Launch stores both with the member, so a later
 `--add` reads the earlier members of a set. A member launched again after a
 failed start takes both from the new spec. `--dry-run` ends a member's line
-with `, quiet` when the spec sets `"quiet": true` and with `, set <label>`
-when it sets a label. The line of a kind that is quiet by nature shows no
-`, quiet`.
+with `, quiet` when the spec sets `"quiet": true`, for any kind, and with
+`, set <label>` when it sets a label. A reviewer, plan reviewer, reconciler
+or closer whose spec has no `quiet` key shows no `, quiet`, although it is
+quiet by its kind.
 `plugins` is an object from a
 Claude plugin id `name@marketplace` to true or false. The team's map applies
 to every member of the same spec file, and a member's value wins per key
