@@ -719,3 +719,45 @@ fn stops_at_the_same_time_record_one_corrective_hold() {
         corrective_holds(&rig)
     );
 }
+
+/// A pending handoff or question-round result is delivered at the stop with
+/// the clipped reprompt unread, whether or not a tool hook reminded it
+/// first. The reprompt stays unread for the next session or round. A plain
+/// result in the same place is still held, as before.
+#[test]
+fn a_pending_handoff_or_question_round_is_delivered_with_the_reprompt_left_unread() {
+    use teamwire_core::CompletionStatus::{Blocked, Done};
+    let cases = [
+        (Done, "handoff: fresh session", true),
+        (Blocked, "1 question for the parent. Which port?", true),
+        (Done, "finished the api", false),
+    ];
+    for (status, summary, waits) in cases {
+        for reminded in [false, true] {
+            let (mut rig, api) = team();
+            let (ulid, _) = reprompt(&mut rig, &api, 301);
+            if reminded {
+                on_tool_use(&mut rig.ctx(), &api);
+            }
+            done_with(&mut rig, &api, status, summary);
+            let reply = on_turn_end(&mut rig.ctx(), &api, &stop("api-1"));
+            let case = format!("{summary}, reminded {reminded}: {reply:?}");
+            let delivered = rig.newest(&api).completion.report_state == ReportState::Delivered;
+            let row = rig
+                .store
+                .read(|tx| tx.delivery(&ulid, &Recipient::Member(api.clone())))
+                .unwrap()
+                .unwrap();
+            assert_ne!(row.delivery.state, DeliveryState::Acked, "{case}");
+            if waits {
+                assert!(matches!(reply, TurnEndReply::Continue), "{case}");
+                assert!(delivered, "{case}");
+                assert_eq!(rig.typed_to_lead().len(), 1, "{case}");
+                assert_eq!(row.reminded_at.is_some(), reminded, "{case}");
+            } else {
+                assert!(hold_note(reply).contains("m001"), "{summary}");
+                assert!(!delivered, "{case}");
+            }
+        }
+    }
+}

@@ -114,6 +114,15 @@ pub(crate) fn owed(
     ctx.store.read(|tx| owed_in(tx, member, latest))
 }
 
+/// A result the member recorded to wait on purpose: a handoff, whose next
+/// session carries on, or a question round, which waits for the lead's
+/// answers. A hold at such a stop would keep the result from the lead.
+pub(crate) fn waits_on_purpose(r: &CompletionRecord) -> bool {
+    teamwire_core::completion::is_handoff(&r.completion.summary)
+        || (r.completion.status == teamwire_core::CompletionStatus::Blocked
+            && teamwire_core::completion::asks_the_parent(&r.completion.summary))
+}
+
 fn owed_in(
     tx: &ReadTx<'_>,
     member: &Member,
@@ -123,11 +132,7 @@ fn owed_in(
         return Ok(None);
     }
     let role = &member.role;
-    if latest.is_some_and(|r| {
-        teamwire_core::completion::is_handoff(&r.completion.summary)
-            || (r.completion.status == teamwire_core::CompletionStatus::Blocked
-                && teamwire_core::completion::asks_the_parent(&r.completion.summary))
-    }) {
+    if latest.is_some_and(waits_on_purpose) {
         return Ok(None);
     }
     let Some(start) = tx

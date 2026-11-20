@@ -229,7 +229,20 @@ fn hold(
         (teamwire_core::ReportGaps::default(), None)
     };
     let told = !gaps.is_empty();
-    let unread = unread(ctx, &member.role)?;
+    // A handoff or a question round not yet delivered goes to the lead at
+    // this stop: an unread message is left unread, and unreminded, for the
+    // next session or the next round, which reads it then.
+    let waits = latest.is_some_and(|r| {
+        matches!(
+            r.completion.report_state,
+            ReportState::Pending | ReportState::Delivering
+        ) && crate::reprompt_hold::waits_on_purpose(r)
+    });
+    let unread = if waits {
+        Vec::new()
+    } else {
+        unread(ctx, &member.role)?
+    };
     if !told && unread.is_empty() && corrective.is_none() {
         return Ok((None, check_error));
     }
