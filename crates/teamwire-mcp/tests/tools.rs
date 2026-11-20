@@ -714,7 +714,7 @@ async fn a_reprompt_receipt_names_the_role_its_state_and_its_new_generation() {
     assert_eq!(out["deliveries"][0]["to"], "web");
     assert_eq!(
         text(&result),
-        "m001 reprompt sent: web: handed_off, now generation 2"
+        "m001 reprompt sent: web: handed_off, started generation 2"
     );
 }
 
@@ -867,4 +867,107 @@ async fn a_member_reads_with_team_inbox_and_finishes_with_team_done() {
         .unwrap()
         .items;
     assert!(held.is_empty(), "{held:?}");
+}
+
+/// A reprompt whose delivery failed gives its generation back, so its
+/// receipt names no generation; a replayed key names the generation its
+/// message started, not the member's current one.
+#[tokio::test]
+async fn a_reprompt_receipt_names_only_the_generation_that_message_started() {
+    let mut rig = Rig::new();
+    rig.add_member("api", MemberKind::Investigator);
+    rig.add_member("web", MemberKind::Implementer);
+    let web_pid = rig.next_pid;
+    rig.set_reachable("web", web_pid, false);
+    let lead = rig.client(McpCaller::Lead).await;
+    let send = |text: &str, key: &str| json!({"team": "alpha", "to": ["web"], "type": "reprompt", "text": text, "key": key});
+
+    let failed = call(&lead, "team_send", send("part one", "k1")).await;
+    let out = ok(&failed).clone();
+    assert_eq!(out["deliveries"][0]["state"], "undelivered");
+    let said = text(&failed);
+    assert!(!said.contains("now generation"), "{said}");
+    assert!(
+        said.contains("web: undelivered (")
+            && said.contains("no generation started: web stays in generation 1"),
+        "{said}"
+    );
+    assert_eq!(out["generations"][0]["to"], "web");
+    assert_eq!(out["generations"][0]["started"], Value::Null);
+    assert_eq!(out["generations"][0]["current"], 1);
+
+    rig.set_reachable("web", web_pid, true);
+    let sent = call(&lead, "team_send", send("part two", "k2")).await;
+    assert_eq!(
+        text(&sent),
+        "m002 reprompt sent: web: handed_off, started generation 2"
+    );
+    call(&lead, "team_send", send("part three", "k3")).await;
+    let replay = call(&lead, "team_send", send("part two", "k2")).await;
+    let said = text(&replay);
+    assert!(
+        said.starts_with("m002 reprompt sent: web: ")
+            && said.contains("started generation 2 (now in generation 3)"),
+        "{said}"
+    );
+    assert_eq!(ok(&replay)["generations"][0]["started"], 2);
+}
+
+/// A recipient or `re` that the server cannot parse, from a proven lead,
+/// is a refusal the store records, as a missing field is.
+#[tokio::test]
+async fn a_malformed_recipient_or_re_is_recorded_as_refused() {
+    let (rig, _api, _web) = two_members().await;
+    let lead = rig.client(McpCaller::Lead).await;
+    for args in [
+        json!({"team": "alpha", "to": ["typo/invalid"], "type": "reprompt", "text": "do it"}),
+        json!({"team": "alpha", "to": ["api"], "type": "answer", "text": "yes", "re": "not-an-id"}),
+    ] {
+        let result = call(&lead, "team_send", args.clone()).await;
+        assert_eq!(refused(&result), "invalid.argument", "{args}");
+        assert!(text(&result).starts_with("NOT SENT: "), "{args}");
+    }
+    let refusals = rig
+        .store
+        .read(|tx| tx.events_of_type(EventType::MessageRefused))
+        .unwrap()
+        .items;
+    assert_eq!(refusals.len(), 2, "{refusals:?}");
+    assert!(
+        refusals
+            .iter()
+            .all(|e| e.data["code"] == "invalid_argument" && e.data["sender"] == "lead"),
+        "{refusals:?}"
+    );
+}
+
+/// A resend with nothing to retry names the message that exists, and an
+/// inbox read with `all` says it marked nothing read.
+#[tokio::test]
+async fn resend_and_inbox_all_texts_do_not_misstate_what_is_stored() {
+    let (_rig, api, web) = two_members().await;
+    call(
+        &api,
+        "team_send",
+        json!({"to": ["web"], "type": "finding", "text": "look here"}),
+    )
+    .await;
+    let result = call(&api, "team_resend", json!({"id": "m001"})).await;
+    assert_eq!(refused(&result), "refused.not_resendable");
+    let said = text(&result);
+    assert!(!said.contains("there is no message id"), "{said}");
+    assert!(
+        said.starts_with("NOT RESENT: ") && said.contains("m001 is stored"),
+        "{said}"
+    );
+
+    let all = call(&web, "team_inbox", json!({"all": true})).await;
+    let said = text(&all);
+    assert!(!said.contains("now marked read"), "{said}");
+    assert!(
+        said.starts_with("1 message(s), none marked read:"),
+        "{said}"
+    );
+    let unread = call(&web, "team_inbox", json!({})).await;
+    assert!(text(&unread).starts_with("1 message(s), now marked read:"));
 }

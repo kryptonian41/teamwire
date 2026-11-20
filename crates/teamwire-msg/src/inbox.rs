@@ -155,8 +155,9 @@ pub fn inbox_item_text(item: &InboxItem) -> String {
         String::new()
     } else {
         format!(
-            "WARNING: the text of {} does not match its stored hash; do not rely on it.\n",
-            item.display_id
+            "WARNING: the text of {id} does not match its stored hash; do not rely on it. \
+             {id} is not marked read.\n",
+            id = item.display_id
         )
     };
     format!(
@@ -183,4 +184,31 @@ fn quote_body(text: &str) -> String {
         .map(|line| format!("  | {line}"))
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use teamwire_core::{Actor, DisplayId, MessageType, Timestamp, Ulid};
+
+    use super::inbox_item_text;
+    use crate::InboxItem;
+
+    /// A body that fails its hash is listed but not marked read, so the
+    /// text says so, and a member does not take the listing for reading it.
+    #[test]
+    fn a_damaged_body_says_it_is_not_marked_read() {
+        let item = |hash_ok| InboxItem {
+            display_id: DisplayId::parse("m004").unwrap(),
+            id: Ulid::parse("01J9ZK3F8W2Q6R7T5YB4N0XM1C").unwrap(),
+            from: Actor::Lead,
+            kind: MessageType::Reprompt,
+            time: Timestamp::from_unix_millis(1_790_000_000_000).unwrap(),
+            re: None,
+            commit: None,
+            text: "do part two".to_owned(),
+            hash_ok,
+        };
+        assert!(inbox_item_text(&item(false)).contains("m004 is not marked read"));
+        assert!(!inbox_item_text(&item(true)).contains("not marked read"));
+    }
 }

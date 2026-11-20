@@ -26,6 +26,7 @@ mod older;
 mod places;
 mod received;
 mod reopen;
+mod standing;
 mod store;
 mod team;
 #[cfg(test)]
