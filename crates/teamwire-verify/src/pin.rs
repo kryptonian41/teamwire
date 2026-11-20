@@ -1,5 +1,5 @@
 //! `teamwire verify --role R --pinned-in DIR`: whether a closer's clone sits
-//! on the commit verify recorded for R (ADR 0057). It runs no check.
+//! on the commit verify recorded for R (ADR 0059). It runs no check.
 //!
 //! A closer once ran `git checkout -b <team>/<role> || true` in its clone.
 //! That made a new local branch at the clone's `main`, not the member's

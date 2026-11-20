@@ -1,5 +1,5 @@
 //! The lead skill states what counts as a sent reprompt and a finished
-//! generation (ADR 0057). A lead that read a refused send as a receipt, then
+//! generation (ADR 0059). A lead that read a refused send as a receipt, then
 //! closed the team with a bare `teamwire close`, archived a blocked
 //! generation as a success. The skill is the lead's only copy of these
 //! rules, for a Claude Code lead and a pi lead alike.

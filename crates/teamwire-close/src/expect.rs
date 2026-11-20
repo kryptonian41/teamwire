@@ -1,4 +1,4 @@
-//! The outcome checks of a whole-team close (ADR 0057).
+//! The outcome checks of a whole-team close (ADR 0059).
 //!
 //! `--expect role:generation:status` names a result the lead needs before
 //! the team may close. The close refuses unless that member is in that

@@ -1,4 +1,4 @@
-//! ADR 0057, through the real binary: a member blocked in generation 1, a
+//! ADR 0059, through the real binary: a member blocked in generation 1, a
 //! reprompt the lead sends to a word that is no role, then the close. A
 //! bare close refuses, so a refused reprompt is never archived as a
 //! finished generation; `--expect` checks the result the lead needs, and a

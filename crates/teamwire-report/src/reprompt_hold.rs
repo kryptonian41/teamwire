@@ -1,5 +1,5 @@
 //! The one corrective hold of a generation that a reprompt started (ADR
-//! 0057). The ordinary hold names a message once (ADR 0003 point 8), and the
+//! 0059). The ordinary hold names a message once (ADR 0003 point 8), and the
 //! tool hook's reminder uses that once up: a member that was reminded after a
 //! tool call, then answered in chat and stopped, was never held. A reminder
 //! is not reading, and an answer in chat is not a result. So at a stop the

@@ -474,7 +474,7 @@ pub fn record_refusal(
 /// Records a send by a proven sender that was malformed, such as one with
 /// no recipient, as `message.refused` with the code `invalid_argument`. It
 /// stores nothing, as a refusal does; the record lets `teamwire close` tell
-/// that the lead's newest send never went out (ADR 0057).
+/// that the lead's newest send never went out (ADR 0059).
 pub fn record_invalid(
     ctx: &mut Ctx<'_>,
     actor: &Actor,

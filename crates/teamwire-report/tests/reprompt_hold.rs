@@ -1,4 +1,4 @@
-//! ADR 0057: the one corrective hold of a generation that a reprompt from
+//! ADR 0059: the one corrective hold of a generation that a reprompt from
 //! the lead started. A reminder after a tool call is not reading the
 //! reprompt, and a chat answer is not a result.
 #![expect(

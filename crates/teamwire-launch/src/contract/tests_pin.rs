@@ -1,4 +1,4 @@
-//! ADR 0057: what every contract says about a long reprompt's pointer line
+//! ADR 0059: what every contract says about a long reprompt's pointer line
 //! and a result, and how a closer pins its checks
 //! to the commit verify recorded.
 

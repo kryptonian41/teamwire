@@ -41,7 +41,7 @@ fn success(reply: Reply) -> CallToolResult {
 
 /// The text of a refused call. A refused send says first that nothing was
 /// sent: a lead once read the last error of a refused send as a receipt and
-/// went on to close the team (ADR 0057).
+/// went on to close the team (ADR 0059).
 fn refusal(failure: &ToolFailure, tool: &str) -> CallToolResult {
     let text = match tool {
         "team_send" | "team_resend" => format!(

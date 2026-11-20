@@ -207,7 +207,7 @@ fn late_final(
 
 /// The one hold a stop may get: report gaps (once per generation), unread
 /// messages (once per message) and the generation's corrective hold (once
-/// per generation, ADR 0057), in one note.
+/// per generation, ADR 0059), in one note.
 fn hold(
     ctx: &mut Ctx<'_>,
     member: &Member,

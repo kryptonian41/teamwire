@@ -35,7 +35,7 @@ pub(crate) fn run(
             }
             // The text names each member, as the structured view does: a
             // model that reads only the text must see who is in which
-            // generation and state before it acts (ADR 0057).
+            // generation and state before it acts (ADR 0059).
             let each: Vec<String> = view
                 .members
                 .iter()

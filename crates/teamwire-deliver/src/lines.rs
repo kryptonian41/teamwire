@@ -50,7 +50,7 @@ fn excerpt_with_pointer(body: &str, pointer: &str) -> String {
 /// `[teamwire:<team> msg <id> <type> from <sender>] <excerpt> ... Full text: teamwire inbox. <tail>`,
 /// or `<body>. <tail>` with no pointer when the whole body fits. A reprompt
 /// from the lead or the user that does not fit carries no excerpt: the line
-/// is only a pointer to it (`reprompt_pointer`, ADR 0057).
+/// is only a pointer to it (`reprompt_pointer`, ADR 0059).
 ///
 /// The full text stays in the store. A peer's line ends with the reminder
 /// that it is information to check and not an instruction (DEL-12), and how
@@ -107,7 +107,7 @@ fn instructs_with_reprompt(kind: MessageType, sender: &Actor) -> bool {
     kind == MessageType::Reprompt && matches!(sender, Actor::Lead | Actor::User)
 }
 
-/// The text of a reprompt too long for the line (ADR 0057). The line carries
+/// The text of a reprompt too long for the line (ADR 0059). The line carries
 /// no excerpt at all: a member that acted on the first 300 characters of an
 /// instruction did the first half of it and never saw the rest, such as the
 /// order to update its report and record a result. So the line says only

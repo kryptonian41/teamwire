@@ -69,7 +69,7 @@ pub struct CloseOpts {
     pub team: Option<TeamName>,
     /// `--expect role:generation:status`: results a whole-team close
     /// requires, checked before any step and again under the close lock
-    /// (ADR 0057).
+    /// (ADR 0059).
     #[serde(default)]
     pub expect: Vec<Expected>,
     /// `--abandon <why>`: close the team as it is although the lead's newest

@@ -352,7 +352,7 @@ fn send_tool(
 
 /// What a send's text names beyond each recipient's state: the message
 /// type, and after a reprompt each member's generation as stored now, read
-/// back after the send (ADR 0057). A failed reprompt gave its generation
+/// back after the send (ADR 0059). A failed reprompt gave its generation
 /// back, so the number is what the lead checks the result against.
 struct Receipt {
     kind: MessageType,

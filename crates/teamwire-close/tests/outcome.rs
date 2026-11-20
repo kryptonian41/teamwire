@@ -1,4 +1,4 @@
-//! ADR 0057: the outcome checks of a whole-team close. A refused reprompt
+//! ADR 0059: the outcome checks of a whole-team close. A refused reprompt
 //! starts no generation, so a close after it would archive a blocked or
 //! older result as if it were the one the lead asked for.
 #![expect(

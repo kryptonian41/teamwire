@@ -205,7 +205,7 @@ impl Seq<'_, '_> {
     }
 
     /// The outcome checks again, now that the lock stops every new send and
-    /// reprompt (ADR 0057): a result that changed since the plan stops the
+    /// reprompt (ADR 0059): a result that changed since the plan stops the
     /// close before anything is taken away. An `--abandon` reason is
     /// recorded here as its own step.
     fn recheck_outcome(&mut self) -> bool {

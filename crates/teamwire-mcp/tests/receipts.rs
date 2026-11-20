@@ -1,4 +1,4 @@
-//! ADR 0057: the text a model reads from a tool call names what it needs to
+//! ADR 0059: the text a model reads from a tool call names what it needs to
 //! act on: each member's role, state and generation, and for a refused send
 //! that nothing was sent. A model that reads only the text, as a lead did
 //! that took a refused send for a sent one, must not need the structured

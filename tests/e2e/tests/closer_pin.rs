@@ -1,4 +1,4 @@
-//! ADR 0057, through the real binary: `teamwire verify --role R --pinned-in
+//! ADR 0059, through the real binary: `teamwire verify --role R --pinned-in
 //! DIR` tells a closer whether its clone sits on the commit verify recorded
 //! for R. The case seen: in the clone a new local branch with the member's
 //! branch name, made from `main`, so every check after it read the base.
