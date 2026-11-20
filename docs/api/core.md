@@ -71,6 +71,7 @@ pub struct Member {
 impl Member {
     pub fn is_quiet(&self) -> bool;                      // its kind is quiet, or `quiet` is true (MSG-3)
     pub fn may_send(&self, kind: MessageType) -> bool;   // what its kind may send, and nothing when quiet
+    pub fn hears(&self, sender: &Actor) -> bool;         // may be shown a message from `sender`: not quiet, or the sender is its own lead
 }
 ```
 
@@ -79,7 +80,19 @@ Every rule that decides silence asks `Member::is_quiet` or
 a send, the check of a recipient in another team, and the roster. A
 `Member`'s JSON (`teamwire export`) writes `quiet` in effect, the answer of
 `is_quiet`, so a reviewer's JSON says `"quiet": true` although its stored
-value is false. A reconciler reads the reports of one set of readers and
+value is false.
+
+A member can become quiet after a message to it was stored: a relaunch after
+a failed start may set `quiet` or a quiet kind. So every read that shows a
+member a message asks `Member::hears` again, through `ReadTx::hears(recipient,
+sender)` in the store: the inbox and `ack`, the reminder of the member hook
+and the Stop hook's list, the step that types a message for a send or a
+resend, a member's own `log`, and status. A row that was not typed moves to
+`undelivered` with `recipient_not_allowed`, and no resend types it. A row
+that may already be on the old screen (`handed_off`, `unconfirmed`) cannot
+move back, so each read leaves it out instead.
+
+A reconciler reads the reports of one set of readers and
 writes the one report the next step acts on; it runs in `pane` mode only
 (ADR 0057). A set is the members with the same `set` label in one team.
 
@@ -139,6 +152,7 @@ pub enum DeliveryErrorCode {
     DeliveryInterrupted,  // left in `delivering` past `delivering_stale_s` (REP-14)
     BudgetExhausted,      // the turn-end hook's delivery budget ran out (ADR 0007)
     HeldForHandoff,       // the recipient asked for a handoff; nothing was typed (ADR 0043)
+    RecipientNotAllowed,  // the recipient is quiet and the sender is not its own lead; never typed (MSG-3)
 }
 
 /// Why a send was refused before anything was stored (MSG-1..MSG-3, MSG-9, MSG-14, MSG-15, MSG-20).

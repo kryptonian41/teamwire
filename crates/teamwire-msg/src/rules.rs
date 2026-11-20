@@ -193,7 +193,6 @@ fn check_recipients(snap: &Snapshot, actor: &Actor, req: &SendRequest) -> Result
             "a message needs at least one recipient".to_owned(),
         ));
     }
-    let from_lead = *actor == Actor::Lead;
     let from_user = *actor == Actor::User;
     for to in &req.to {
         if to.as_str() == actor.as_str() {
@@ -229,7 +228,7 @@ fn check_recipients(snap: &Snapshot, actor: &Actor, req: &SendRequest) -> Result
         };
         if let Some(m) = member {
             // A fresh view of the work: only the lead speaks to these (MSG-3).
-            if m.is_quiet() && !from_lead {
+            if !m.hears(actor) {
                 return Err(Refusal::RecipientNotAllowed.into());
             }
             // A generation can only start for a member that is running.

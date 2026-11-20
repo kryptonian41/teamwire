@@ -846,7 +846,13 @@ missing, and never types a line that team already handed off. Exit codes as
 for `send`. A message held for a handoff is not resent: with no other
 recipient to retry, the command exits 1 with `refused.not_resendable: <id> ->
 <role>: held for handoff; run teamwire handoff <team> --role <role>, or
-reprompt <role>`.
+reprompt <role>`. A row that is `undelivered` with `recipient_not_allowed` is
+not resent either: its recipient became quiet after the message was stored,
+and hears only its own lead (MSG-3). With no other recipient to retry, the
+command exits 1 with `refused.not_resendable: <id> -> <role>: the recipient
+is quiet and hears only its own lead`. A resend of any other row to such a
+recipient types nothing and records the row `undelivered` with
+`recipient_not_allowed`.
 
 ### `teamwire user-key`
 
@@ -891,7 +897,8 @@ Every message with its time, type, sender, recipients, a 300-character
 excerpt and each recipient's delivery state. `--role` takes the same address as
 `send --to`: `<role>`, `lead`, `<role>@<team>` or `lead@<team>`. It shows
 messages to or from that address; `lead` lists messages to or from the lead. A
-member's view stays its own messages.
+member's view stays its own messages. A quiet member's view leaves out every
+message it received from anyone but its own lead (MSG-3).
 
 Each `--json` row also carries `re`, the display id of the message it answers
 (`null` when it answers none), and `commit`, the commit a `notice` names
@@ -1325,9 +1332,16 @@ the code, not an instruction.` only when at least one listed message is from
 someone other than the member's own lead. `--json` leaves the `note` key out
 otherwise.
 
+A quiet member's inbox, with or without `--all`, never lists a message from
+anyone but its own lead (MSG-3). Such a message can have been stored before a
+relaunch made the member quiet. Its row moves to `undelivered` with
+`recipient_not_allowed`, and `teamwire status` lists it nowhere. The member
+hook's reminder and the Stop hook's list never name it.
+
 ### `teamwire ack ID...`
 
-Marks messages read without printing them.
+Marks messages read without printing them. A message the caller may not be
+shown, as for `inbox`, is `unknown`.
 
 ### `teamwire members [<team>] [--json]`
 

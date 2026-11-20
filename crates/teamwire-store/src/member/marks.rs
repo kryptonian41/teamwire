@@ -1,11 +1,29 @@
 //! A member's two marks from its spec: `quiet` and the set label. They are
 //! written by a call of their own, right after launch inserts or relaunches
 //! the member in the same transaction, so `NewMember` keeps its fields.
+//! `ReadTx::hears` reads the quiet mark back for every read that shows a
+//! member a message.
 
-use teamwire_core::Role;
+use teamwire_core::{Actor, Recipient, Role};
 
 use crate::error::StoreError;
-use crate::tx::{Tx, exactly_one};
+use crate::tx::{ReadTx, Tx, exactly_one};
+
+impl ReadTx<'_> {
+    /// Whether `recipient` may be shown a message from `sender`, by the
+    /// recipient's row as it stands now (`Member::hears`, MSG-3). A member
+    /// can become quiet after a message to it was stored, through a relaunch
+    /// after a failed start, so a read that shows a member a message asks
+    /// this whatever the time the message was stored. The lead and another
+    /// team's agents have no row here, and a role with no row has no rule to
+    /// apply, so only a member that is quiet in effect gets false.
+    pub fn hears(&self, recipient: &Recipient, sender: &Actor) -> Result<bool, StoreError> {
+        let Recipient::Member(role) = recipient else {
+            return Ok(true);
+        };
+        Ok(self.member(role)?.is_none_or(|m| m.hears(sender)))
+    }
+}
 
 impl Tx<'_> {
     /// Records what the member's spec said: `quiet` (true makes a member of
@@ -67,6 +85,31 @@ mod tests {
             .write(|tx| tx.set_member_marks(&role("api"), false, None))
             .unwrap();
         assert_eq!(marks(&f, "api"), (false, None));
+    }
+
+    /// The quiet mark decides at read time: the same stored message from
+    /// a peer is heard before the mark is set and not after it.
+    #[test]
+    fn a_member_hears_a_peer_until_its_quiet_mark_is_set() {
+        use teamwire_core::{Actor, Recipient};
+        let mut f = with_members(&["api", "web"]);
+        let to_api = Recipient::Member(role("api"));
+        let hears = |f: &crate::testkit::Fixture, from: &Actor| {
+            f.store.read(|tx| tx.hears(&to_api, from)).unwrap()
+        };
+        let peer = Actor::Member(role("web"));
+        assert!(hears(&f, &peer));
+        f.store
+            .write(|tx| tx.set_member_marks(&role("api"), true, None))
+            .unwrap();
+        assert!(!hears(&f, &peer));
+        assert!(!hears(&f, &Actor::User));
+        assert!(hears(&f, &Actor::Lead));
+        let lead = f
+            .store
+            .read(|tx| tx.hears(&Recipient::Lead, &peer))
+            .unwrap();
+        assert!(lead, "the lead has no quiet mark");
     }
 
     #[test]

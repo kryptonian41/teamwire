@@ -17,7 +17,8 @@ pub fn log_party(text: &str, own: &TeamName) -> Result<Actor, NameError> {
 }
 
 /// The messages the viewer may see, oldest first. A member sees only
-/// messages it sent or received; the lead and the user see all. `role` keeps only
+/// messages it sent or received, and a quiet member none it received from
+/// anyone but its own lead (MSG-3); the lead and the user see all. `role` keeps only
 /// messages to or from that party. `limit` keeps the newest rows.
 ///
 /// A message whose body fails its hash cannot be shown as it is stored. It
@@ -43,6 +44,12 @@ pub fn log(ctx: &Ctx<'_>, filter: LogFilter) -> Result<Vec<LogRow>, SendError> {
         }
         let mut rows = Vec::new();
         for message in found.items {
+            if let Some(Actor::Member(me)) = &viewer_scope
+                && message.sender.as_str() != me.as_str()
+                && !tx.hears(&Recipient::Member(me.clone()), &message.sender)?
+            {
+                continue;
+            }
             let deliveries = tx.deliveries_of(&message.ulid)?.all_or_corrupt()?;
             // The message this one answers may itself be damaged. That must
             // not hide this message, so its id is left out.

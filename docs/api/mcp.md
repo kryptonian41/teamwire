@@ -159,7 +159,9 @@ Return unread messages for the caller, oldest first, and mark them `acked`.
 Members only: the lead's call is refused with `invalid.argument`.
 
 Input: `{"all": false}`. With `all: true` it also returns read messages and
-marks nothing.
+marks nothing. A quiet member is never returned a message from anyone but its
+own lead, also one stored before a relaunch made it quiet (MSG-3); see
+`teamwire inbox` in `docs/api/cli.md`.
 
 Output:
 

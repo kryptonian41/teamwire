@@ -8,6 +8,7 @@ use crate::message::MessageType;
 use crate::names::{HarnessId, HostId, Place, Role, SessionId};
 use crate::strings::string_enum;
 use crate::timestamp::Timestamp;
+use crate::who::Actor;
 
 string_enum! {
     pub enum MemberKind {
@@ -119,6 +120,16 @@ impl Member {
     /// may send, and nothing when it is quiet.
     pub fn may_send(&self, kind: MessageType) -> bool {
         !self.is_quiet() && self.kind.may_send(kind)
+    }
+
+    /// Whether this member may be shown a message from `sender`, which is
+    /// stored in this member's own team: a quiet member hears only its own
+    /// lead (MSG-3). Every read that shows a member a message asks this as
+    /// well as the send check, because a member can become quiet after a
+    /// message to it was stored: a relaunch after a failed start may set
+    /// `quiet` or a quiet kind.
+    pub fn hears(&self, sender: &Actor) -> bool {
+        !self.is_quiet() || *sender == Actor::Lead
     }
 }
 
@@ -259,6 +270,33 @@ mod tests {
                 assert_eq!(plain.may_send(*ty), kind.may_send(*ty), "{kind} {ty}");
             }
         }
+    }
+
+    #[test]
+    fn a_quiet_member_hears_only_its_own_lead() {
+        let senders = [
+            Actor::Lead,
+            Actor::User,
+            Actor::parse("api").unwrap(),
+            Actor::parse("lead@beta").unwrap(),
+            Actor::parse("db@beta").unwrap(),
+        ];
+        for kind in MemberKind::ALL {
+            for stored in [false, true] {
+                let m = member(*kind, stored);
+                for sender in &senders {
+                    let want = !m.is_quiet() || *sender == Actor::Lead;
+                    assert_eq!(
+                        m.hears(sender),
+                        want,
+                        "{kind} quiet={stored} from {sender:?}"
+                    );
+                }
+            }
+        }
+        assert!(!member(MemberKind::Investigator, true).hears(&Actor::parse("api").unwrap()));
+        assert!(member(MemberKind::Investigator, false).hears(&Actor::parse("api").unwrap()));
+        assert!(member(MemberKind::Reviewer, false).hears(&Actor::Lead));
     }
 
     /// A reviewer stores `quiet` false, yet its JSON says true: a reader of
