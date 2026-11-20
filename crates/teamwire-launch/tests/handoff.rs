@@ -358,3 +358,68 @@ fn a_handoff_first_line_counts_the_held_messages() {
         plan.first_line
     );
 }
+
+/// The first line counts the messages the member's inbox shows. A quiet
+/// member's inbox leaves out every message from anyone but its own lead
+/// (`Member::hears`, MSG-3): here a peer's row withheld as
+/// `recipient_not_allowed`, and a peer's row still waiting to be typed. A
+/// member that is not quiet is shown all three rows.
+#[test]
+fn a_quiet_members_first_line_counts_only_what_its_inbox_shows() {
+    use teamwire_core::{Actor, DeliveryErrorCode, DeliveryState, MessageType, Recipient};
+    for (quiet, count) in [(true, 1), (false, 3)] {
+        let rig = Rig::new();
+        let mut store = running_team(&rig);
+        let now = rig.clock.now();
+        let api = Recipient::Member(role("api"));
+        let peer = Actor::Member(role("web"));
+        let rows = [
+            (Actor::Lead, MessageType::Note, false),
+            (peer.clone(), MessageType::Finding, true),
+            (peer, MessageType::Finding, false),
+        ];
+        store
+            .write(|tx| {
+                for (sender, kind, withheld) in &rows {
+                    let stored = tx.insert_message(
+                        now,
+                        &teamwire_store::NewMessage {
+                            sender: sender.clone(),
+                            kind: *kind,
+                            re: None,
+                            commit: None,
+                            body: format!("a {kind}"),
+                            client_key: None,
+                            recipients: vec![api.clone()],
+                        },
+                    )?;
+                    if *withheld {
+                        tx.set_delivery_state(
+                            now,
+                            &stored.message.ulid,
+                            &api,
+                            &teamwire_store::DeliveryUpdate {
+                                state: DeliveryState::Undelivered,
+                                route: None,
+                                error: Some(teamwire_core::DeliveryError::new(
+                                    DeliveryErrorCode::RecipientNotAllowed,
+                                    "withheld from a quiet member",
+                                )),
+                                attempts: 0,
+                            },
+                        )?;
+                    }
+                }
+                tx.set_member_marks(&role("api"), quiet, None)
+            })
+            .unwrap();
+        let ctx = ctx(&rig, &mut store);
+        let plan = plan_handoff(&ctx, &role("api")).unwrap();
+        assert!(
+            plan.first_line
+                .contains(&format!("You have {count} unread message(s)")),
+            "quiet {quiet}: {}",
+            plan.first_line
+        );
+    }
+}
