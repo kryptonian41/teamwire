@@ -21,6 +21,8 @@ use teamwire_launch::{ValidateEnv, parse_spec, validate};
 
 #[path = "preset/run.rs"]
 mod run;
+#[path = "preset/sets.rs"]
+mod sets;
 
 fn presets_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/presets")

@@ -347,7 +347,10 @@ and the model's family then sets the member's harness, in this order:
    from. Without `--harness`, the command lists your own harness. A
    `builtin` list comes from the harness's docs, so a model on it may still
    be out of reach for this account. A pi model can fail even on a `listed`
-   list, as "Setting up a machine" in `reference.md` explains.
+   list, as "Setting up a machine" in `reference.md` explains. The `family`
+   column names each model's family, such as `claude`, `gpt` or `gemini`,
+   or `unknown`. The family labels a model and warns about a set. It picks
+   nothing.
 2. **Set each member's `task_class`** from the table under "Roles".
 3. **Read the evidence for each class.** Run
    `teamwire models --for <class>` once per class in the plan. It adds the
@@ -393,6 +396,141 @@ Extra thinking buys little in routine edits and a lot in judging other
 agents' work or in reasoning about a race. A higher effort also makes slower
 turns, which use up a member's `deadline_s`. No measured source backs that
 reasoning yet, so check it against what `teamwire models --for` shows.
+
+## Sets: several model families on one judging job
+
+A set is two or three members that do the same judging job on the same
+brief, each on a model of a different family, such as Claude, GPT and
+Gemini. The members of a set never talk to each other. Each one is a
+**reader**. A `reconciler` then reads the readers' reports, checks each
+finding in the code, and writes the one report the next step acts on. A
+member joins a set through its `set` label: members with the same label in
+one team form one set. A set reads once, so a set is one review round with
+several readers side by side, not a second review.
+
+Two sets exist today. A **plan-reviewer set** takes the place of the single
+plan reviewer, from `teamwire preset plan-review-set`. A **reviewer set**
+takes the place of the single reviewer, from `teamwire preset review-set`.
+A planner set is a later step and has no preset yet.
+
+The evidence is modest. In one controlled study, two reviewers of different
+families found 56.7% of planted errors, and two of one family found 42.7%.
+The study could not tell the family apart from the reviewers' strength.
+Nobody has measured what a third reader adds. The sources are in
+`docs/research/2026-11-19-model-family-sets.md` in the teamwire repository.
+
+**The rules of every set.**
+
+1. A set is opt-in. With the user present, ask which set to use when you
+   settle the plan's questions. Recommend a set when the team has three or
+   more implementers, or when any member's class is `cross_cutting` or
+   `concurrency_data_loss`. In an away-from-keyboard run, use a set only
+   when the user's task text asks for one.
+2. Pick one model per family: the newest top-tier model of each family that
+   `teamwire models --harness claude-code` and `teamwire models --harness pi`
+   list. The `family` column says which family a model is. Use at least two
+   families, and three when a third is reachable. A set has at most three
+   readers. When more than three families are reachable, keep the three
+   whose top models have the strongest evidence in
+   `teamwire models --for judgement`, and say in the plan why.
+3. Say in the plan when a pick has no measured result for its seat in
+   `teamwire models --for judgement`. The user confirms or swaps each pick.
+4. Set each reader's `harness` from its model's family, as "Choose each
+   member's model" says, and set `effort` on every reader. A model called
+   with no effort setting can run below its best level.
+5. Show the user the estimated money for the readers that run through a
+   provider that bills each token, before the launch. teamwire has no
+   command that gives a model's tier, release date or price. Take them from
+   the provider's own pages or from what you know, and say in the plan
+   where each one came from.
+6. Give every reader the same brief, and no reader a special focus. A
+   reviewer with a special focus is a separate member outside the set.
+7. Launch the reconciler only after every reader has reported. Launch warns
+   when you do not.
+8. The reconciler reads the reports under role names. Do not tell it which
+   model wrote which report.
+9. Read the reconciler's summary and its "Questions for the parent". For a
+   reviewer set, send each owner one reprompt that names the reconciler's
+   report and the owner's section, "Findings for <role>". For a
+   plan-reviewer set, you are the owner. Read "Findings for the lead" and
+   the "Paraphrases" section, compare each paraphrase with what you meant,
+   and fix the briefs once. Do not read the readers' reports yourself.
+10. A set reads once. Never run a set, or a single reviewer, a second time
+    on the same diff or the same plan.
+11. When a reader cannot reach its model, carry on if two families remain.
+    Otherwise replace that reader once, under a new role name, with another
+    model of the same family. When the replacement fails too and one family
+    is left, no set runs. Tell the user, treat the one report as a single
+    review, and add no reconciler.
+12. For a reader on Claude Code, give the plugins map from "Skills and
+    plugins in members". A pi reader ignores that map, so check that the
+    user's pi setup has no memory feature that carries one reader's
+    findings to another.
+
+**The order of work for a plan-reviewer set.**
+
+1. Plan, run the planning check, and ask the user whether to use a set, with
+   your model picks and the estimated money.
+2. Write the plan, the team spec and every brief to files.
+3. Launch the readers alone from `teamwire preset plan-review-set`, with
+   `harness`, `model` and `effort` filled in on each, and start the watch.
+   Read each set warning launch prints.
+4. When every reader has reported, add the reconciler with
+   `teamwire launch --add`, and start a new watch.
+5. Read the reconciler's report as rule 9 says, and fix the briefs once.
+6. Add the implementers with `teamwire launch --add`.
+
+**The order of work for a reviewer set.**
+
+1. Settle the set with the user at the plan's questions, as for a
+   plan-reviewer set.
+2. Write one brief for the set. It lists one line per implementer: its
+   branch, its base and its brief. Every reader reads every diff in the
+   list against its brief. A team with one implementer has a list of one.
+3. When the last implementer the set reads has reported done, add the
+   readers from `teamwire preset review-set` with `teamwire launch --add`,
+   all in one spec file. Read each set warning launch prints.
+4. When every reader has reported, add the reconciler with
+   `teamwire launch --add`. Its task names the readers' report paths and
+   the roles that own code.
+5. Read the reconciler's report as rule 9 says, and send each owner its
+   section in one reprompt, all in one turn.
+6. Go on with "After the last wave": at most two fix rounds per owner,
+   `teamwire verify`, the integrator and the closer.
+
+A team that runs the same preset again, for another diff, renames the `set`
+label, all four roles and the report paths in the reconciler's task. Launch
+never uses a role twice in one team.
+
+This spec adds a reviewer set to the team `myteam`. The model ids are
+placeholders: fill in the ids that `teamwire models --harness <id>` prints.
+The three readers share one `task_file`, so their briefs are the same file.
+
+```json
+{
+  "team": "myteam",
+  "children": [
+    {"role": "reva", "title": "Review the diffs, reader a", "kind": "reviewer",
+     "set": "revset", "mode": "pane", "task_class": "judgement", "cwd": "/abs/path/repo",
+     "harness": "claude-code", "model": "<newest Claude model>", "effort": "<its highest level>",
+     "plugins": {"ponytail@ponytail": false, "mattpocock-skills@claude-plugins-official": false, "claude-mem@thedotmack": false},
+     "task_file": "/abs/path/briefs/review-set.md"},
+    {"role": "revb", "title": "Review the diffs, reader b", "kind": "reviewer",
+     "set": "revset", "mode": "pane", "task_class": "judgement", "cwd": "/abs/path/repo",
+     "harness": "pi", "model": "<provider>/<newest GPT model>", "effort": "<its highest level>",
+     "task_file": "/abs/path/briefs/review-set.md"},
+    {"role": "revc", "title": "Review the diffs, reader c", "kind": "reviewer",
+     "set": "revset", "mode": "pane", "task_class": "judgement", "cwd": "/abs/path/repo",
+     "harness": "pi", "model": "<provider>/<newest Gemini model>", "effort": "<its highest level>",
+     "task_file": "/abs/path/briefs/review-set.md"}
+  ]
+}
+```
+
+Once all three have reported, a second spec adds the reconciler `revjoin`
+with `"kind": "reconciler"`, `"set": "revset"`, `"mode": "pane"` and
+`"task_class": "judgement"`. Its task names the three report paths, such as
+`$TEAMWIRE_HOME/teams/myteam/reports/reva.md`, and the roles that own code.
 
 ## Skills and plugins in members
 
