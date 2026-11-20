@@ -361,16 +361,24 @@ Close runs in the only safe order and stops at the first step that fails:
    them out, then run again. A worktree on a detached HEAD whose commits are
    on no branch gets the branch `teamwire/rescue/<team>-<role>-<sha7>`, and
    close prints it among the kept branches.
-3. It archives the team (briefs, contracts, messages, results, reports, setup
+3. It refuses an outcome you have not accepted: a started member whose
+   current result is `blocked` or `failed`, or whose current generation has
+   no result after an older one had one, and your newest send when it was
+   refused. Each `--expect role:generation:status` must hold, and accepts
+   that member's outcome. `--abandon WHY` closes the team as it is and
+   records the reason as a step. Close re-checks the outcomes under the
+   close lock, after new sends stop, so a result that changed since the
+   plan stops it before anything is removed.
+4. It archives the team (briefs, contracts, messages, results, reports, setup
    logs) to `$TEAMWIRE_HOME/archive/<team>-<date>`, or to
    `DIR/<team>-<date>` with `--archive-to DIR`, and adds a time to the name
    when it is taken. It verifies the copy before removing anything.
-4. It removes worktrees and tabs, and keeps the branches. For parallel
+5. It removes worktrees and tabs, and keeps the branches. For parallel
    tickets the branch is the deliverable, so delete branches yourself only
    for throwaway teams.
-5. It releases the sleep hold if a team started it and this was the lead
+6. It releases the sleep hold if a team started it and this was the lead
    session's last live team.
-6. It deletes the team's state directory only when every step succeeded.
+7. It deletes the team's state directory only when every step succeeded.
    `--keep-state` keeps it, marked closed.
 
 Close prints the branches kept and any unpushed commits. A close that crashed

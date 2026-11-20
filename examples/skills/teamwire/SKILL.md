@@ -718,6 +718,13 @@ unread, the hook holds delivery once and tells the member what to fix. The
 second stop delivers anyway, and `teamwire verify` flags what is still
 missing. A member's "tests pass" is a claim, not evidence.
 
+A generation succeeded only when `teamwire status` shows the member's result
+in that generation with the status you need. After a reprompt, the receipt
+names the generation it started. A message count, a clean `teamwire verify`
+or a `SKIPPED` check is not task success. An answer in chat or a finding is
+not a result either: the member records its result with `done`. A result
+from an older generation answers the older task, not your reprompt.
+
 A summary that starts with `nothing to do:` means the brief's "When to do
 nothing" case held, so the member changed nothing on purpose and recorded
 `done`. Verify then flags `no-commits`, which is expected: waive it with the
@@ -761,7 +768,22 @@ teamwire log <team> [--role ROLE]
 `send` stores the message under the team's `comms/` directory, even when
 delivery fails. Then it types one line into each recipient's pane: the whole
 body up to 300 characters, or else a 300-character excerpt followed by a
-pointer to the stored copy. Exit code 1 is a refusal, 4 is `NOT DELIVERED`,
+pointer to the stored copy. A reprompt from you or the user that is
+longer than 300 characters gets no excerpt, because a cut task reads as a
+whole one. Its line names the message id and says "Read the full
+instruction first, before you act", with the inbox tool and command, and
+asks for an explicit result. A reminder after a member's tool call is not
+reading: the member's Stop hook holds its stop once in that generation
+while the reprompt is unread, or read with no result recorded.
+
+A send succeeded only when its receipt names a message id and the target
+role. The CLI prints the id, then one line per recipient role with its
+delivery state. The `team_send` tool's text reads
+`m012 reprompt sent: api: handed_off, now generation 4`. A refused send
+stores nothing and starts no generation. The tool's text then starts with
+`NOT SENT` and says there is no message id, and the CLI exits 1. Fix the
+call and send again. Never read the last error of a refused send as a
+receipt. Exit code 1 is a refusal, 4 is `NOT DELIVERED`,
 5 is `UNCONFIRMED`, and 6 is a store error. After `UNCONFIRMED` the text may
 be on screen already. Check `teamwire status`, and only if it did not arrive
 run
@@ -993,7 +1015,15 @@ members merge, build, test and push, and you judge what they report.
    claimed new test, run the local gate on each branch that no integrator
    joins, in a clone of its own, and report which gate ran and which were
    left to CI. A passing
-   test can prove nothing, which is why the closer reverts. It names
+   test can prove nothing, which is why the closer reverts. The closer
+   pins each check to a commit: the sha on the `head` line verify prints
+   for the member, or the integrator's for the joined head. A branch name
+   is not a commit, because a branch of the same name in the clone can sit
+   on the base. The closer checks the sha out detached and runs
+   `teamwire verify <team> --role <role> --pinned-in <clone path>` from the
+   clone's root, and takes evidence there only when that exits 0. A closer
+   report that names a branch and no sha, or shows a placeholder where an
+   exit code belongs, is no evidence. It names
    contradictions, writes one report, and cannot send work. Read its report,
    then a member's result only where it
    points. Compare every **Decisions I made** list side by side with
@@ -1081,6 +1111,32 @@ close ("Other commands" in `reference.md` lists its labels).
 teamwire close <team> --dry-run    # print the plan
 teamwire close <team>
 ```
+
+Name the result you need before a close archives it:
+
+```bash
+teamwire close <team> --expect <role>:<generation>:<status>   # once per member you need, such as api:4:done
+teamwire close <team> --abandon "<why>"                         # close on purpose with work unfinished
+```
+
+`--expect` refuses unless that member is in that generation and its newest
+result is in that generation with that status. It also refuses an unknown
+or removed role. The status is `done`, `blocked` or `failed`: `skipped` and
+`clean` are not results. A refused reprompt starts no generation, so an
+expectation of the generation you meant to start fails, and the close
+removes nothing. Close checks the expectations in the plan, in `--dry-run`,
+and once more under its lock before it archives.
+
+A bare close refuses while a started member's current result is `blocked`
+or `failed`, or its current generation has no result after an older one had
+one. A bare close also names your newest send when it was refused. A team
+whose members all finished `done`, or never reported, closes as before. To
+close past a member's blocked result, name it with `--expect`, such as
+`api:3:blocked`. To close a team you are abandoning, pass `--abandon` with
+the reason, which close records as one of its steps. The two flags do not
+combine, and both are for a whole-team close. Never use `--abandon` to get past a
+refused send you meant to make: fix the send, wait for the result, then
+close.
 
 Close runs its steps in a safe order and stops at the first that fails.
 It refuses a busy member and uncommitted work, archives the team, and

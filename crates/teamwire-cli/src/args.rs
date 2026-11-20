@@ -356,8 +356,9 @@ pub(crate) struct CloseArgs {
     /// that generation and its newest result there has that status.
     #[arg(long, value_name = "ROLE:GEN:STATUS", conflicts_with_all = ["role", "abandon", "clear_stale_lock"])]
     pub(crate) expect: Vec<String>,
-    /// Close the team as it is although the lead's newest send was refused.
-    /// WHY is recorded as a close step.
+    /// Close the team as it is, on purpose: past a member's blocked, failed
+    /// or unfinished current generation and a refused newest send by the
+    /// lead. WHY is recorded as a close step.
     #[arg(long, value_name = "WHY", conflicts_with_all = ["role", "clear_stale_lock"])]
     pub(crate) abandon: Option<String>,
 }
