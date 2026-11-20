@@ -1,6 +1,7 @@
 //! ADR 0059, through the real binary and the member's real Stop hook: a
 //! reprompt over 300 characters whose marker sits only past the cut. The
-//! member's turn answers in chat and records nothing. The Stop hook holds it
+//! member's turn runs a tool, whose hook reminds it of the reprompt, then
+//! answers in chat and records nothing. The Stop hook holds it
 //! once; the held turn reads the inbox, writes the marker into its report
 //! and records `done`. The watch then counts one result for the reprompt's
 //! generation, and the team completes once.
@@ -13,6 +14,16 @@ use teamwire_e2e::{World, sh};
 use teamwire_fakes::{ClaudeScript, Step};
 
 const MARKER: &str = "violet-73";
+
+/// The second turn runs one tool, whose `PostToolUse` hook reminds the
+/// member of the unread reprompt, then answers in chat and records nothing:
+/// the order of the failure that was seen. The hook gets the input Claude
+/// Code sends, with the session id the test wrote for it.
+const TOOL_THEN_CHAT: &str = "sid=$(cat \"$TEAMWIRE_HOME/a-session\")\n\
+     printf '{\"session_id\":\"%s\",\"hook_event_name\":\"PostToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"},\"cwd\":\"%s\"}' \"$sid\" \"$PWD\" \\\n\
+     | teamwire hook claude-post-tool --team \"$TEAMWIRE_TEAM\" --role \"$TEAMWIRE_ROLE\" \\\n\
+     > \"$TEAMWIRE_HOME/tool-hook-out\"\n\
+     echo 'the answer is 42'\n";
 
 #[test]
 fn a_clipped_reprompt_answered_in_chat_is_held_once_then_finished_from_the_inbox() {
@@ -34,7 +45,7 @@ fn a_clipped_reprompt_answered_in_chat_is_held_once_then_finished_from_the_inbox
                 sh::report(false),
                 sh::done("part one")
             ))],
-            vec![Step::Run("echo 'the answer is 42'\n".to_owned())],
+            vec![Step::Run(TOOL_THEN_CHAT.to_owned())],
         ],
         on_hold: vec![Step::Run(finish_from_inbox)],
         ..ClaudeScript::default()
@@ -46,6 +57,14 @@ fn a_clipped_reprompt_answered_in_chat_is_held_once_then_finished_from_the_inbox
     assert_eq!(launch.code, 0, "{}", launch.all());
     w.wait_lead_screen("[teamwire:demo] a finished (done)", Duration::from_secs(30));
 
+    let a = Role::parse("a").unwrap();
+    let session = w
+        .store("demo")
+        .read(|tx| tx.member(&a))
+        .unwrap()
+        .and_then(|m| m.session_id)
+        .unwrap();
+    std::fs::write(w.home.path().join("a-session"), session.as_str()).unwrap();
     let text = format!(
         "{} then write {MARKER} in your report",
         "context ".repeat(40)
@@ -65,7 +84,9 @@ fn a_clipped_reprompt_answered_in_chat_is_held_once_then_finished_from_the_inbox
     assert!(screen.contains("too long for this line"), "{screen}");
     assert!(!screen.contains("context context"), "{screen}");
 
-    let a = Role::parse("a").unwrap();
+    // The tool hook reminded the reprompt before the stop.
+    let reminded = std::fs::read_to_string(w.home.path().join("tool-hook-out")).unwrap();
+    assert!(reminded.contains("m001"), "{reminded}");
     let store = w.store("demo");
     let held: Vec<_> = store
         .read(|tx| tx.events_of_type(EventType::MemberHeld))
