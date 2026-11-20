@@ -145,3 +145,18 @@ fn a_deleted_file_tests_the_crate_that_names_it() {
     assert!(!root.exists(), "{} must not exist", root.display());
     assert_eq!(changed(path), ["teamwire-cli"]);
 }
+
+/// A change to the root `Cargo.toml` can change how every crate builds, so
+/// the script says to run the full gate even when it also tests crates.
+#[test]
+fn a_root_build_file_asks_for_the_full_gate() {
+    let run = dry_run(&["Cargo.toml"]);
+    assert_eq!(run.code, 0, "{}{}", run.out, run.err);
+    assert!(
+        run.out.contains(
+            "test-changed: a change to the root Cargo.toml, Cargo.lock or toolchain needs scripts/gate.sh"
+        ),
+        "{}",
+        run.out
+    );
+}

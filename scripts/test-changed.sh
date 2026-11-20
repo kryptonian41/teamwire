@@ -190,6 +190,8 @@ reads_outside() {
   done
 }
 
+gate_hint="test-changed: a change to the root Cargo.toml, Cargo.lock or toolchain needs scripts/gate.sh"
+build_file=0
 changed=""
 if [ -n "$args" ]; then
   for p in $args; do
@@ -239,8 +241,14 @@ if [ -z "$args" ]; then
   )"
   if [ -z "$changed" ]; then
     echo "test-changed: no changed file belongs to a workspace crate; nothing to test"
-    echo "test-changed: a change to the root Cargo.toml, Cargo.lock or toolchain needs scripts/gate.sh"
+    echo "$gate_hint"
     exit 0
+  fi
+  # A root build file can change how every crate builds, and the crates the
+  # script tests are not all of them, so it says to run the full gate too.
+  if echo "$files" | grep -qxF -e Cargo.toml -e Cargo.lock \
+    -e rust-toolchain.toml -e .cargo/config.toml; then
+    build_file=1
   fi
 fi
 
@@ -296,6 +304,9 @@ echo "test-changed: changed: $(echo $changed)"
 echo "test-changed: packages: $(echo $packages)"
 echo "test-changed: $build"
 echo "test-changed: TEAMWIRE_FAKES_PREBUILT=1 $test"
+if [ "$build_file" -eq 1 ]; then
+  echo "$gate_hint"
+fi
 if [ "$dry" -eq 1 ]; then
   exit 0
 fi
