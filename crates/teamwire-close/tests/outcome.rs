@@ -1,26 +1,21 @@
 //! ADR 0059: the outcome checks of a whole-team close. A refused reprompt
 //! starts no generation, so a close after it would archive a blocked or
 //! older result as if it were the one the lead asked for.
-#![expect(
-    clippy::unwrap_used,
-    clippy::indexing_slicing,
-    reason = "a failing unwrap or index in an integration test fails the test"
-)]
 
 #[path = "support/rig.rs"]
 pub mod rig;
 
 use rig::{Rig, TEAM};
-use serde_json::json;
+use serde_json::{Value, json};
 use teamwire_close::{CloseOpts, CloseTarget, Expected, close, close_observed, plan_close_with};
 use teamwire_core::{
     Actor, Clock as _, CompletionStatus, EventType, FinalSource, Host as _, MemberKind,
     MessageType, Recipient, Role, TeamName, TeamState,
 };
-use teamwire_store::{NewCompletion, NewMessage, Store, Tx};
+use teamwire_store::{NewCompletion, NewMessage, Store, StoreError, Tx};
 
 fn role(name: &str) -> Role {
-    Role::parse(name).unwrap()
+    Role::parse(name).unwrap_or_else(|e| unreachable!("{name} is a role: {e}"))
 }
 
 /// `short` in generation `generation` with a result of `status` there.
@@ -29,10 +24,14 @@ fn result_in(
     rig_now: teamwire_core::Timestamp,
     generation: u32,
     status: CompletionStatus,
-) {
+) -> Result<(), StoreError> {
     let short = role("short");
-    while tx.reader().member(&short).unwrap().unwrap().generation < generation {
-        tx.bump_generation(rig_now, &short, "m001").unwrap();
+    while tx
+        .reader()
+        .member(&short)?
+        .is_some_and(|m| m.generation < generation)
+    {
+        tx.bump_generation(rig_now, &short, "m001")?;
     }
     tx.insert_completion(
         rig_now,
@@ -44,8 +43,8 @@ fn result_in(
             final_message: None,
             final_source: FinalSource::None,
         },
-    )
-    .unwrap();
+    )?;
+    Ok(())
 }
 
 /// The team of the case that was seen: `short` blocked in generation 3,
@@ -56,7 +55,7 @@ fn blocked_then_refused() -> Rig {
     let now = rig.clock.now();
     rig.store
         .write(|tx| {
-            result_in(tx, now, 3, CompletionStatus::Blocked);
+            result_in(tx, now, 3, CompletionStatus::Blocked)?;
             tx.record_event(
                 now,
                 EventType::MessageRefused,
@@ -68,13 +67,13 @@ fn blocked_then_refused() -> Rig {
                 }),
             )
         })
-        .unwrap();
+        .unwrap_or_else(|e| unreachable!("the fixture is written: {e}"));
     rig
 }
 
 fn expecting(text: &str) -> CloseOpts {
     CloseOpts {
-        expect: vec![Expected::parse(text).unwrap()],
+        expect: vec![Expected::parse(text).unwrap_or_else(|e| unreachable!("{text}: {e}"))],
         ..CloseOpts::default()
     }
 }
@@ -168,7 +167,11 @@ fn team_of(results: &[(&str, u32, Option<CompletionStatus>)]) -> Rig {
         .write(|tx| {
             for (name, generation, status) in results {
                 let who = role(name);
-                while tx.reader().member(&who)?.unwrap().generation < *generation {
+                while tx
+                    .reader()
+                    .member(&who)?
+                    .is_some_and(|m| m.generation < *generation)
+                {
                     tx.bump_generation(now, &who, "m001")?;
                 }
                 if let Some(status) = status {
@@ -187,7 +190,7 @@ fn team_of(results: &[(&str, u32, Option<CompletionStatus>)]) -> Rig {
             }
             Ok(())
         })
-        .unwrap();
+        .unwrap_or_else(|e| unreachable!("the fixture is written: {e}"));
     rig
 }
 
@@ -337,7 +340,7 @@ fn the_matching_result_closes_the_team_and_the_check_is_recorded() {
     let now = rig.clock.now();
     rig.store
         .write(|tx| {
-            result_in(tx, now, 4, CompletionStatus::Done);
+            result_in(tx, now, 4, CompletionStatus::Done)?;
             Ok(())
         })
         .unwrap();
@@ -373,8 +376,13 @@ fn abandon_closes_a_team_on_purpose_and_records_why() {
     let recorded: Vec<String> = rig
         .events(EventType::CloseStep)
         .into_iter()
-        .filter(|e| e.data["step"] == "abandon")
-        .map(|e| e.data["reason"].as_str().unwrap().to_owned())
+        .filter(|e| e.data.get("step").and_then(Value::as_str) == Some("abandon"))
+        .filter_map(|e| {
+            e.data
+                .get("reason")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        })
         .collect();
     assert_eq!(
         recorded,
@@ -390,7 +398,7 @@ fn a_result_that_changes_before_the_lock_stops_the_close_with_nothing_removed() 
     let now = rig.clock.now();
     rig.store
         .write(|tx| {
-            result_in(tx, now, 4, CompletionStatus::Done);
+            result_in(tx, now, 4, CompletionStatus::Done)?;
             Ok(())
         })
         .unwrap();

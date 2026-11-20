@@ -176,9 +176,9 @@ failures. Each one let an agent take an unfinished step for a finished one.
 | Decision | Tests |
 | --- | --- |
 | 1 | `crates/teamwire-deliver/tests/lines.rs` (300/301 boundary, peer and other-team controls) |
-| 2 | `crates/teamwire-report/tests/reprompt_hold.rs` |
+| 2 | `crates/teamwire-report/tests/reminder.rs` |
 | 3 | `crates/teamwire-harness-pi/src/extension.rs` unit test |
-| 4 | `crates/teamwire-mcp/tests/receipts.rs` |
+| 4 | `crates/teamwire-mcp/tests/tools.rs` |
 | 5 | `crates/teamwire-close/tests/outcome.rs`, `tests/e2e/tests/checked_close.rs` |
 | 6 | `tests/e2e/tests/closer_pin.rs`, `crates/teamwire-cli/tests/preset.rs` |
 | 7 | `crates/teamwire-launch/src/contract/tests_pin.rs`, `crates/teamwire-cli/tests/lead_guidance.rs` |

@@ -3,10 +3,6 @@
 //! bare close refuses, so a refused reprompt is never archived as a
 //! finished generation; `--expect` checks the result the lead needs, and a
 //! close whose expectation holds runs.
-#![expect(
-    clippy::redundant_closure_for_method_calls,
-    reason = "`ReadTx::team` as a path does not infer the transaction's lifetime for `Store::read`"
-)]
 
 use std::time::Duration;
 
@@ -59,7 +55,12 @@ fn a_bare_close_after_a_refused_reprompt_refuses_and_a_checked_close_decides() {
         all.extend_from_slice(args);
         w.teamwire(&all, None)
     };
-    let open = || w.store("demo").read(|tx| tx.team()).unwrap().unwrap().state;
+    let open = || {
+        w.store("demo")
+            .read(|tx| tx.team().map(|team| team.map(|t| t.state)))
+            .unwrap()
+            .unwrap()
+    };
 
     // A bare close and its dry run refuse, and change nothing.
     for args in [&[][..], &["--dry-run"][..]] {

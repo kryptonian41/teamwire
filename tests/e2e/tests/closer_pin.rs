@@ -2,28 +2,12 @@
 //! DIR` tells a closer whether its clone sits on the commit verify recorded
 //! for R. The case seen: in the clone a new local branch with the member's
 //! branch name, made from `main`, so every check after it read the base.
-#![expect(
-    clippy::unwrap_used,
-    clippy::disallowed_methods,
-    reason = "the test runs a closer's shell checks in its clone, as the closer would; a failure there fails the test"
-)]
 
-use std::path::Path;
 use std::time::Duration;
 
 use serde_json::json;
 use teamwire_e2e::{World, sh};
 use teamwire_fakes::{ClaudeScript, Step};
-
-/// Whether `sh -c <script>` exits 0 in `dir`, as a closer's positive check.
-fn passes(dir: &Path, script: &str) -> bool {
-    std::process::Command::new("/bin/sh")
-        .args(["-c", script])
-        .current_dir(dir)
-        .status()
-        .unwrap()
-        .success()
-}
 
 #[test]
 fn the_pin_refuses_a_same_named_branch_at_the_base_and_accepts_the_verified_sha() {
@@ -96,7 +80,7 @@ fn the_pin_refuses_a_same_named_branch_at_the_base_and_accepts_the_verified_sha(
 
     // The mistake that was seen: a new local branch of the same name, made
     // from the clone's main, with its failure masked.
-    assert!(passes(&clone, "git checkout -q -b writer || true"));
+    assert!(w.sh_passes(&clone, "git checkout -q -b writer || true"));
     assert_eq!(w.git(&clone, &["rev-parse", "HEAD"]), base_sha);
     let run = pin();
     assert_eq!(run.code, 1, "{}", run.all());
@@ -109,8 +93,8 @@ fn the_pin_refuses_a_same_named_branch_at_the_base_and_accepts_the_verified_sha(
     assert!(run.err.contains("NOT PINNED"), "{}", run.all());
     // There, the declared check passes and proves nothing: the artifact is
     // not in the tree.
-    assert!(passes(&clone, "true"));
-    assert!(!passes(&clone, "test -f writer.txt"));
+    assert!(w.sh_passes(&clone, "true"));
+    assert!(!w.sh_passes(&clone, "test -f writer.txt"));
 
     // The commit by its sha, detached, as the refusal says.
     w.git(&clone, &["fetch", "--quiet", "origin"]);
@@ -123,7 +107,7 @@ fn the_pin_refuses_a_same_named_branch_at_the_base_and_accepts_the_verified_sha(
         "{}",
         run.all()
     );
-    assert!(passes(&clone, "test -f writer.txt"));
+    assert!(w.sh_passes(&clone, "test -f writer.txt"));
     // A folder inside the right clone is not the clone: git would read the
     // clone's HEAD there, but checks run in it see none of its files.
     let child = clone.join("empty-child");
@@ -146,7 +130,7 @@ fn the_pin_refuses_a_same_named_branch_at_the_base_and_accepts_the_verified_sha(
         "{}",
         run.all()
     );
-    assert!(!passes(&child, "test -f writer.txt"));
+    assert!(!w.sh_passes(&child, "test -f writer.txt"));
     std::fs::remove_dir(&child).unwrap();
 
     // A commit after the verify makes the record out of date.
@@ -172,11 +156,10 @@ fn the_pin_refuses_a_same_named_branch_at_the_base_and_accepts_the_verified_sha(
         run.all()
     );
 
-    // With its checkout moved aside, or swapped for an empty folder inside
-    // the repository (where git would read the repository's own HEAD), its
+    // With its checkout gone, or swapped for an empty folder inside the
+    // repository (where git would read the repository's own HEAD), its
     // current commit cannot be proven, and nothing is pinned.
-    let aside = w.work().join("writer-aside");
-    std::fs::rename(&worktree, &aside).unwrap();
+    std::fs::remove_dir_all(&worktree).unwrap();
     for setup in ["missing", "empty"] {
         if setup == "empty" {
             std::fs::create_dir_all(&worktree).unwrap();

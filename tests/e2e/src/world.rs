@@ -215,6 +215,17 @@ impl World {
         String::from_utf8_lossy(&out.stdout).trim().to_owned()
     }
 
+    /// Whether `sh -c <script>` exits 0 in `dir`, as a shell check that a
+    /// closer would type there.
+    pub fn sh_passes(&self, dir: &Path, script: &str) -> bool {
+        Command::new("/bin/sh")
+            .args(["-c", script])
+            .current_dir(dir)
+            .status()
+            .unwrap()
+            .success()
+    }
+
     /// The command every `teamwire` process of the world starts as: a
     /// cleared environment with the fakes' `PATH`, the temporary home, and
     /// the lead's pane and session, so the locator finds the lead.
