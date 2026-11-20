@@ -194,6 +194,9 @@ fn the_fill_is_the_newest_reading() {
 }
 
 /// A pi session file in the shape pi 1.4 writes, its message text cut out.
+/// One line is made up for the test: the `"type":"usage"` line that holds a
+/// `cost`. No real pi file has that line type. It proves that a line of any
+/// type other than `message` adds no tokens and no money.
 const USAGE_FIXTURE: &str = include_str!("fixtures/session-usage.jsonl");
 
 /// Every assistant message counts once, by its model. pi splits a response
@@ -201,7 +204,7 @@ const USAGE_FIXTURE: &str = include_str!("fixtures/session-usage.jsonl");
 /// Its money is `usage.cost.total`, rounded per reply to whole millionths
 /// of a dollar: 25424 + 9515 (from 9515.3) + 23481 (from 23480.5) for
 /// the Gemini model. A model a subscription pays for records 0. The
-/// `"type":"usage"` line repeats a reply's figures and counts for nothing.
+/// made-up `"type":"usage"` line counts for nothing.
 #[test]
 fn the_usage_sums_every_assistant_message_by_model() {
     let rig = Rig::new();
