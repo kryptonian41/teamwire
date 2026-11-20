@@ -81,6 +81,17 @@ impl ReadTx<'_> {
         self.latest_of(role, &[kind])
     }
 
+    /// The newest event of any of `kinds` (of `role`, when given), such as
+    /// the event that started a member's current generation. Fails only when
+    /// that newest event is damaged.
+    pub fn latest_of_kinds(
+        &self,
+        role: Option<&Role>,
+        kinds: &[EventType],
+    ) -> Result<Option<Event>, StoreError> {
+        self.latest_of(role, kinds)
+    }
+
     /// The newest event of any of `kinds`: only that row is read.
     fn latest_of(
         &self,

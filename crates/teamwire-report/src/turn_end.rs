@@ -18,6 +18,7 @@ use crate::final_message;
 use crate::note::{FIX_THEN_STOP, READ_THEN_STOP, gap_note, unread_note};
 use crate::paths::{report_file, team_dir};
 use crate::reminder::{mark_stopped, unread};
+use crate::reprompt_hold::{Corrective, owed};
 use crate::result_file::{MISSING_FROM_HARNESS, Rendered, write_current};
 
 /// The cap on a result line that ends with the no-watch note: the 1000
@@ -129,7 +130,8 @@ fn run(
 
     let mut check_error = None;
     if !t.hold_already_active {
-        let (note, error) = hold(ctx, &member, latest.as_ref(), started)?;
+        let corrective = owed(ctx, &member, latest.as_ref())?;
+        let (note, error) = hold(ctx, &member, latest.as_ref(), corrective.as_ref(), started)?;
         if let Some(note) = note {
             return Ok(TurnEndReply::Hold(note));
         }
@@ -203,12 +205,14 @@ fn late_final(
     Ok(())
 }
 
-/// The one hold a stop may get: report gaps (once per generation) and unread
-/// messages (once per message), in one note.
+/// The one hold a stop may get: report gaps (once per generation), unread
+/// messages (once per message) and the generation's corrective hold (once
+/// per generation, ADR 0057), in one note.
 fn hold(
     ctx: &mut Ctx<'_>,
     member: &Member,
     latest: Option<&CompletionRecord>,
+    corrective: Option<&Corrective>,
     started: std::time::Instant,
 ) -> Result<(Option<String>, Option<String>), StoreError> {
     // A `delivering` completion already passed the check before the crash.
@@ -221,7 +225,7 @@ fn hold(
     };
     let told = !gaps.is_empty();
     let unread = unread(ctx, &member.role)?;
-    if !told && unread.is_empty() {
+    if !told && unread.is_empty() && corrective.is_none() {
         return Ok((None, check_error));
     }
     let ids: Vec<String> = unread.iter().map(|u| u.display_id.clone()).collect();
@@ -233,6 +237,9 @@ fn hold(
             FIX_THEN_STOP,
         ));
     }
+    if let Some(c) = corrective {
+        parts.push(c.note());
+    }
     if !ids.is_empty() {
         parts.push(format!("{} {READ_THEN_STOP}", unread_note(&ids)));
     }
@@ -243,8 +250,13 @@ fn hold(
         "gaps": gaps,
         "unread": ids,
     });
-    if let (Some(error), Some(fields)) = (&check_error, data.as_object_mut()) {
-        fields.insert("report_check_error".to_owned(), json!(error));
+    if let Some(fields) = data.as_object_mut() {
+        if let Some(error) = &check_error {
+            fields.insert("report_check_error".to_owned(), json!(error));
+        }
+        if let Some(c) = corrective {
+            fields.insert("corrective".to_owned(), c.data());
+        }
     }
     let recipient = teamwire_core::Recipient::Member(member.role.clone());
     let held = ctx.store.write(|tx| {
