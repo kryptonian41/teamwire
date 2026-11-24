@@ -197,6 +197,29 @@ describe("ticket refs on a team", () => {
   });
 });
 
+describe("quiet and set on a roster member", () => {
+  const member = teams.teams[0]!.members[0]!;
+  const parse = (extra: object) =>
+    TeamsList.parse({ teams: [{ ...teams.teams[0]!, members: [{ ...member, ...extra }] }] }).teams[0]!.members[0]!;
+  test("an older output without the keys reads as not quiet and in no set", () => {
+    expect("quiet" in member || "set" in member).toBe(false);
+    expect(parse({})).toMatchObject({ quiet: false, set: null });
+  });
+  test("a quiet member of a set keeps both", () => {
+    expect(parse({ quiet: true, set: "rev1" })).toMatchObject({ quiet: true, set: "rev1" });
+    expect(parse({ quiet: false, set: null })).toMatchObject({ quiet: false, set: null });
+  });
+  test("a reconciler parses", () => {
+    expect(parse({ kind: "reconciler", quiet: true, accepts_from_members: [] }).kind).toBe("reconciler");
+  });
+  test("a quiet flag or a set of the wrong type fails the parse", () => {
+    for (const bad of [{ quiet: "yes" }, { set: 1 }]) {
+      const payload = { teams: [{ ...teams.teams[0]!, members: [{ ...member, ...bad }] }] };
+      expect(TeamsList.safeParse(payload).success).toBe(false);
+    }
+  });
+});
+
 // Reads the real teamwire on this machine. Opt in with TW_UI_LIVE=1, so a
 // member's check never depends on which teams happen to be running. It runs
 // through the server's own runner: identity variables removed, time limits.

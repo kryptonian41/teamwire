@@ -55,6 +55,8 @@ mod tests {
             gate_told_generation: None,
             removed_at: None,
             removed_note: None,
+            quiet: false,
+            set: None,
         }
     }
 

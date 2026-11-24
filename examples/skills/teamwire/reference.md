@@ -6,6 +6,7 @@ Read this when:
 
 - you set up a machine or troubleshoot an install: "Setting up a machine";
 - a watch line you do not know arrives: "Watch lines";
+- launch prints a `warning: set_` line: "Launch warnings for a set";
 - `send` refuses a message: "Messages";
 - a member or a whole team you cannot reach: "Reopen";
 - a member passes its handoff point or a handoff fails: "Context handoff";
@@ -118,6 +119,32 @@ database, so run `teamwire doctor`. The other lines:
 | `UNANSWERED <id> from <role> <age>` | A question to you has waited 10 minutes. Answer with `--type answer --re <id>`; the answer also settles a question that was never typed into your pane. |
 | `TEAM-CLOSED` | The team was closed before `TEAM-COMPLETE`, and the watch exited. If you did not close it, another session did, so run `teamwire status` before you act. |
 | `TEAM-COMPLETE` | Every current member has stopped. A member whose result could not be typed has not stopped while its session works or waits at a dialog. `n/m done` counts only status `done` and names the others. `m` counts every member still in the team, including one that reported `failed`, and leaves out members refused or failed at launch and removed members. It comes on the poll after `WATCHING` at the earliest, so a team that was already finished when you started the watch takes one interval to say so. A member of any kind waiting in a question round, a `blocked` result whose summary starts `N questions for the parent.`, has not stopped, so this line cannot print until you reprompt that member or remove it. The watch keeps running and follows the member again after your reprompt. A later wave, a reviewer or the closer may still be due. While the team has an implementer and no closer has reported, the line ends `If no wave is due: add the integrator when branches join, then the closer (teamwire preset closer).` |
+
+## Launch warnings for a set
+
+Launch and `launch --dry-run` print one stderr line,
+`warning: <code>: <text>`, for each rule a set breaks, and never refuse for
+one. A reader is a member with a `set` label that is not a `reconciler`.
+Launch reads the members of the spec file and the members the team already
+holds, and works out each reader's family from its model, as the `family`
+column of `teamwire models` shows it. A reader that was removed or failed
+counts only when it reported before it left, so the replacement for a lost
+reader prints nothing.
+
+| Code | When | What to do |
+| --- | --- | --- |
+| `set_too_small` | A set has one reader. | Add a reader on another family. When only one family is reachable, no set runs: treat the one report as a single review. |
+| `set_same_family` | Two readers of one set have the same family. Launch reads an earlier reader's model from the record of its start, so a reader whose launch has not finished yet counts for nothing, and two launches at the same time can miss this warning. | Move one of them to a model of another family. Launch every reader of one set from one spec file. |
+| `set_family_unknown` | A reader names no model, or launch cannot tell its model's family. | Fill in the model, or check its family by eye. |
+| `set_mixed_kinds` | Two readers of one set differ in kind. | Give every reader of the set one kind. |
+| `set_reader_not_quiet` | A reader may send messages. | Give it `"quiet": true`, or use a kind that is quiet by nature. |
+| `set_briefs_differ` | Two readers in the spec file have different brief text. teamwire stores no brief text, so launch never compares a reader added later with `--add` with an earlier reader. | Give every reader the same `task` or the same `task_file`. Launch every reader of one set from one spec file. |
+| `set_reconciler_alone` | A `reconciler` has no set label, or no reader carries its label. | Fix the reconciler's `set` label. |
+| `set_reconciler_early` | A `reconciler` is in the same spec file as a reader of its set, or a reader has not reported. One line per such reader. | Leave the reconciler out, and add it with `--add` after every reader has reported. |
+
+A preset spec that holds the readers and their reconciler prints
+`set_reconciler_early` for each reader, because the reconciler carries a
+`_launch_after` note.
 
 ## Messages
 
@@ -393,7 +420,7 @@ is gone, and nothing else. Run close again, and it continues from step 1.
 | `teamwire decisions [<team>] [--role R] [--ref REF] [--grep TEXT] [--json]` | The "Decisions I made" blocks of members' reports, for one team, a ticket ref, or a text search across running teams and archives. Reads only. |
 | `teamwire amend <team> --role R [--check CMD] [--owns PATTERN]... --reason TEXT` | Changes one running member's check, owns or both. `--owns` is repeated, one whole pattern per flag, and replaces the whole list. The member gets a note that starts `CHECK AMENDED:` with the old and new values and the reason, and its seat rules file is rewritten for a later handoff. `close --role` counts no verify recorded at or before that note, so run `teamwire verify <team> --role R` again. Exit 2 when the seat rules file could not be rewritten: run the same amend again. Exit 6 with `NOT RECORDED for <role>` on stderr means the scope and the note are saved but the delivery record is not: run `teamwire resend <team> <id>`, not the amend. A member session cannot run it. |
 | `teamwire export <team> [--out FILE]` | Every record as JSON lines. |
-| `teamwire metrics [<team>] [--since DURATION] [--json]` | Local metrics from the event rows, including tokens per member. A member whose session file holds no usage that teamwire reads shows no tokens, so read a missing count as not recorded, never as zero. After close, the team form reads the team's newest archive under `$TEAMWIRE_HOME/archive/`, but an archive put elsewhere with `--archive-to` is not read, so read it before you close in that case. The counter `teamwire.member.tokens` has the labels `team`, `role`, `kind`, `model`, `effort`, `task_class` (`unclassified` when the spec set none) and `type` (`input`, `output`, `cache_read`, `cache_creation`). A team whose results reach you as `COMPLETED` watch lines, because your host cannot type into your pane, records no tokens. |
+| `teamwire metrics [<team>] [--since DURATION] [--json]` | Local metrics from the event rows, including tokens per member. A member whose session file holds no usage that teamwire reads shows no tokens, so read a missing count as not recorded, never as zero. After close, the team form reads the team's newest archive under `$TEAMWIRE_HOME/archive/`, but an archive put elsewhere with `--archive-to` is not read, so read it before you close in that case. The counter `teamwire.member.tokens` has the labels `team`, `role`, `kind`, `model`, `effort`, `task_class` (`unclassified` when the spec set none) and `type` (`input`, `output`, `cache_read`, `cache_creation`). The counter `teamwire.member.cost`, unit `usd`, gives the money a member's harness recorded, in dollars to 4 places, one line per member and model, such as `teamwire.member.cost{team=myteam,role=revb,kind=reviewer,model=<vendor>/<model>,effort=high,task_class=judgement} 1.5878 usd`. Its labels are the token counter's, without `type`, and its `model` is the model as pi records it, `<vendor>/<model>`, without the `openrouter/` of the spec's id. Only a harness that records money gives the line, which today means pi, so a Claude Code member has none. A team whose results reach you as `COMPLETED` watch lines, because your host cannot type into your pane, records no tokens. |
 | `teamwire handoff <team> --role R [--dry-run]` | Gives a member a fresh session in the same seat, after it wrote its handoff document and recorded `done` with `handoff:`. Refuses a busy member, one at a dialog, or one with uncommitted work, with exit 1 and nothing changed. A missing or old handoff document gives a `warning:` line. Exit 2 after the old session was closed and the new one failed: run `teamwire reopen <team> --role R`. Exit 6 when the store cannot be read. `teamwire handoff --guide` prints the guide a member follows. |
 | `teamwire doctor` | Read-only checks of the state, the disk, the tools and the plugin. Exit 0 when all pass, 2 on any `warn` or `fail` line. |
 | `teamwire version` | The binary's version and the schema version it writes. |

@@ -96,7 +96,7 @@ fn the_mcp_reference_tests_the_cli() {
 
 #[test]
 fn a_doc_no_crate_reads_tests_nothing() {
-    let run = dry_run(&["docs/api/cli.md"]);
+    let run = dry_run(&["docs/build-plan.md"]);
     assert_eq!(run.code, 0, "{}{}", run.out, run.err);
     assert!(
         run.out

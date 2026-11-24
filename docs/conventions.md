@@ -64,7 +64,7 @@ teamwire/
     ├── skills/teamwire/SKILL.md   the lead's skill; `teamwire install` embeds it
     ├── skills/teamwire/reference.md  the skill's lookup tables, embedded too
     ├── skills/afk/SKILL.md        the AFK skill (Claude Code leads only)
-    ├── presets/*.json             the six team shapes and three steps
+    ├── presets/*.json             the six team shapes and five steps
     └── mcp/lead.json              the lead MCP server, which the teamwire
                                    plugin carries; never merged into a
                                    project's .mcp.json (ADR 0018)

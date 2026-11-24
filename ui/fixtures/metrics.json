@@ -18,6 +18,7 @@
     { "name": "teamwire.member.tokens", "unit": "{token}", "labels": [["team", "payments"], ["role", "review"], ["kind", "reviewer"], ["model", "opus"], ["effort", "medium"], ["task_class", "unclassified"], ["type", "cache_read"]], "value": 150000 },
     { "name": "teamwire.member.tokens", "unit": "{token}", "labels": [["team", "payments"], ["role", "review"], ["kind", "reviewer"], ["model", "opus"], ["effort", "medium"], ["task_class", "unclassified"], ["type", "cache_creation"]], "value": 12000 },
     { "name": "teamwire.member.tokens", "unit": "{token}", "labels": [["team", "payments"], ["role", "api"], ["kind", "implementer"], ["model", "haiku"], ["effort", "medium"], ["task_class", "unclassified"], ["type", "output"]], "value": 4000 },
+    { "name": "teamwire.member.cost", "unit": "usd", "labels": [["team", "payments"], ["role", "review"], ["kind", "reviewer"], ["model", "openai/gpt-6-astra"], ["effort", "medium"], ["task_class", "unclassified"]], "value": 1.5878 },
     { "name": "teamwire.completions", "unit": "{completion}", "labels": [["team", "ads"], ["kind", "reviewer"], ["status", "done"]], "value": 3 },
     { "name": "teamwire.completions", "unit": "{completion}", "labels": [["team", "ads"], ["kind", "implementer"], ["status", "failed"]], "value": 1 },
     { "name": "teamwire.messages.sent", "unit": "{message}", "labels": [["team", "ads"], ["type", "note"]], "value": 5 },

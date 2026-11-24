@@ -14,14 +14,16 @@ fn render(kind: MemberKind, check: Option<&str>, owns: &[String]) -> String {
         teamwire_bin: Path::new("/opt/x/teamwire"),
         check,
         owns,
+        quiet: false,
     })
 }
 
 /// The kinds that send and receive no messages.
-const QUIET_KINDS: [MemberKind; 3] = [
+const QUIET_KINDS: [MemberKind; 4] = [
     MemberKind::Reviewer,
     MemberKind::Closer,
     MemberKind::PlanReviewer,
+    MemberKind::Reconciler,
 ];
 
 /// Every rule of the speclife report's table 1.2, as a phrase the text must
@@ -298,6 +300,7 @@ fn a_binary_path_with_a_space_or_a_quote_is_shell_quoted() {
         teamwire_bin: Path::new("/Users/a b/teamwire"),
         check: Some("echo {teamwire}"),
         owns: &[],
+        quiet: false,
     });
     assert!(text.contains("\n     '/Users/a b/teamwire' done --status"));
     assert!(text.contains("echo {teamwire}"), "a check is not rewritten");
@@ -359,4 +362,57 @@ fn a_plan_reviewer_carries_its_own_rules_and_not_the_reviewers() {
     }
     // Not the bare word "diff": the shared text says "different" to every kind.
     assert!(!text.contains("Review the diff"));
+}
+
+#[test]
+fn a_reconciler_carries_its_own_rules_and_not_the_reviewers() {
+    let text = render(MemberKind::Reconciler, None, &[]);
+    for phrase in [
+        "You are the RECONCILER",
+        "Never try to learn which model wrote one",
+        "list\n  every reader that raised it",
+        "CONFIRMED: you saw the failure in the\n  code",
+        "Agreement between readers is not evidence",
+        "Decide no judgement call",
+        "'Findings for <role>'",
+        "a section 'Paraphrases'",
+        "The table is the last section\n  before the 'Decisions I made' list",
+    ] {
+        assert!(text.contains(phrase), "missing: {phrase}");
+    }
+    assert!(!text.contains("You are the REVIEWER"));
+    assert!(!text.contains("/opt/x/teamwire send"));
+}
+
+/// `quiet` gives a kind that talks the quiet parts, and changes nothing for
+/// a kind that is quiet by nature.
+#[test]
+fn quiet_gives_any_kind_the_quiet_parts() {
+    let with_quiet = |kind: MemberKind, quiet: bool| {
+        render_contract(&ContractParts {
+            team: &TeamName::parse("demo").unwrap(),
+            role: &Role::parse("api").unwrap(),
+            kind,
+            report_file: Path::new("/h/teams/demo/reports/api.md"),
+            outbox_dir: Path::new("/h/teams/demo/outbox"),
+            teamwire_bin: Path::new("/opt/x/teamwire"),
+            check: None,
+            owns: &[],
+            quiet,
+        })
+    };
+    for kind in MemberKind::ALL {
+        let text = with_quiet(*kind, true);
+        assert!(
+            text.contains("You send no messages, and members do not message you"),
+            "{kind}"
+        );
+        assert!(
+            text.contains("write the\nquestion in your report file"),
+            "{kind}"
+        );
+        assert!(!text.contains("/opt/x/teamwire send"), "{kind}");
+        let plain = with_quiet(*kind, false);
+        assert_eq!(text == plain, kind.is_quiet(), "{kind}");
+    }
 }

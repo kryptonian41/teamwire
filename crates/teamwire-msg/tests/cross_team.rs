@@ -352,6 +352,64 @@ fn a_plan_reviewer_and_another_team_never_reach_each_other() {
     assert!(messages(&beta).is_empty());
 }
 
+/// A reconciler, and an investigator whose spec set `quiet`, hear only
+/// their own lead, and talk to no other team. The other team's store is
+/// read-only to the sender, so the quiet mark is read from it there.
+#[test]
+fn a_reconciler_a_quiet_investigator_and_another_team_never_reach_each_other() {
+    let mut rig = Rig::new();
+    rig.add_member("api", MemberKind::Implementer);
+    rig.add_member("arec", MemberKind::Reconciler);
+    rig.add_member("ahush", MemberKind::Investigator);
+    rig.store
+        .write(|tx| tx.set_member_marks(&role("ahush"), true, None))
+        .unwrap();
+    rig.add_team(
+        "beta",
+        "lead-2",
+        &[
+            ("db", MemberKind::Implementer),
+            ("rec", MemberKind::Reconciler),
+            ("hush", MemberKind::Investigator),
+        ],
+    );
+    let mut beta = rig.store_of("beta");
+    beta.write(|tx| tx.set_member_marks(&role("hush"), true, None))
+        .unwrap();
+    let mut cases: Vec<(&str, &str, MessageType, Refusal)> = Vec::new();
+    for target in ["rec@beta", "hush@beta"] {
+        for (from, kind) in [
+            ("api", MessageType::Finding),
+            ("api", MessageType::Question),
+            ("lead", MessageType::Finding),
+        ] {
+            cases.push((from, target, kind, Refusal::RecipientNotAllowed));
+        }
+    }
+    for from in ["arec", "ahush"] {
+        cases.push((
+            from,
+            "db@beta",
+            MessageType::Finding,
+            Refusal::TypeNotAllowed,
+        ));
+    }
+    for (from, target, kind, refusal) in cases {
+        let req = rig.request(from, &[target], kind, "x");
+        assert_eq!(
+            refused(send(&mut rig.ctx(), req)),
+            Some(refusal),
+            "{from} -> {target} {kind}"
+        );
+    }
+    assert!(messages(&rig.store).is_empty());
+    assert!(messages(&beta).is_empty());
+    // The investigator of the other team that did not set `quiet` still
+    // hears from this team.
+    let req = rig.request("api", &["db@beta"], MessageType::Finding, "look");
+    assert!(send(&mut rig.ctx(), req).is_ok());
+}
+
 #[test]
 fn a_closed_team_takes_nothing() {
     let mut t = two_teams();

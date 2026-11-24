@@ -152,6 +152,12 @@ string_enum! {
         /// waits for the fresh session or a reprompt and is not typed (ADR
         /// 0043).
         HeldForHandoff => "held_for_handoff",
+        /// The recipient is quiet in effect and the sender is not its own
+        /// lead, so the message is never shown to it (MSG-3). A member can
+        /// become quiet after a message to it was stored, through a relaunch
+        /// after a failed start, so every read that shows a member a message
+        /// checks again. The row is final: no resend types it.
+        RecipientNotAllowed => "recipient_not_allowed",
     }
 }
 

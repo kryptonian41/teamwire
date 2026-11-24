@@ -10,8 +10,8 @@ use std::path::Path;
 use std::time::Duration;
 
 use teamwire_core::{
-    Actor, Command, DeliveryState, DisplayId, Member, MemberKind, MemberState, Message,
-    MessageType, Recipient, Refusal, SendRequest, TeamState, Timestamp, Ulid,
+    Actor, Command, DeliveryState, DisplayId, Member, MemberState, Message, MessageType, Recipient,
+    Refusal, SendRequest, TeamState, Timestamp, Ulid,
 };
 use teamwire_store::{Ctx, TeamRow};
 
@@ -120,15 +120,16 @@ fn snapshot(ctx: &Ctx<'_>, re: Option<&DisplayId>) -> Result<Snapshot, SendError
     })?)
 }
 
-/// Who is speaking.
+/// Who is speaking. A member is carried whole, because whether it may speak
+/// depends on its `quiet` setting as well as its kind.
 #[derive(Clone, Copy)]
-enum SenderKind {
+enum SenderKind<'a> {
     Lead,
     User,
-    Member(MemberKind),
+    Member(&'a Member),
 }
 
-fn check_sender(snap: &Snapshot, actor: &Actor) -> Result<SenderKind, SendError> {
+fn check_sender<'a>(snap: &'a Snapshot, actor: &Actor) -> Result<SenderKind<'a>, SendError> {
     if snap.team_state != TeamState::Open {
         return Err(Refusal::TeamClosed.into());
     }
@@ -144,7 +145,7 @@ fn check_sender(snap: &Snapshot, actor: &Actor) -> Result<SenderKind, SendError>
                 .iter()
                 .find(|m| &m.role == role && m.state != MemberState::Removed)
                 .ok_or(Refusal::Identity)?;
-            Ok(SenderKind::Member(member.kind))
+            Ok(SenderKind::Member(member))
         }
     }
 }
@@ -152,9 +153,9 @@ fn check_sender(snap: &Snapshot, actor: &Actor) -> Result<SenderKind, SendError>
 /// Every agent that talks sends every kind of information; only the lead
 /// and the user instruct (MSG-1). The user only instructs and informs: the
 /// questions and answers between agents stay theirs (ADR 0040).
-fn check_type(sender: SenderKind, kind: MessageType) -> Result<(), SendError> {
+fn check_type(sender: SenderKind<'_>, kind: MessageType) -> Result<(), SendError> {
     let allowed = match (sender, kind) {
-        (SenderKind::Member(k), _) => k.may_send(kind),
+        (SenderKind::Member(m), _) => m.may_send(kind),
         (SenderKind::User, _) => matches!(kind, MessageType::Reprompt | MessageType::Note),
         // A notice names a commit in the sender's checkout, and the lead has
         // no checkout on record to look it up in (MSG-2).
@@ -192,7 +193,6 @@ fn check_recipients(snap: &Snapshot, actor: &Actor, req: &SendRequest) -> Result
             "a message needs at least one recipient".to_owned(),
         ));
     }
-    let from_lead = *actor == Actor::Lead;
     let from_user = *actor == Actor::User;
     for to in &req.to {
         if to.as_str() == actor.as_str() {
@@ -228,7 +228,7 @@ fn check_recipients(snap: &Snapshot, actor: &Actor, req: &SendRequest) -> Result
         };
         if let Some(m) = member {
             // A fresh view of the work: only the lead speaks to these (MSG-3).
-            if m.kind.is_quiet() && !from_lead {
+            if !m.hears(actor) {
                 return Err(Refusal::RecipientNotAllowed.into());
             }
             // A generation can only start for a member that is running.

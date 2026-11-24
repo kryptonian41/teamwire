@@ -49,9 +49,9 @@ pub struct Remote { /* team, role (None for the lead) */ }
 ## 2. Members
 
 ```rust
-pub enum MemberKind { Implementer, Reviewer, Investigator, Closer, PlanReviewer }
+pub enum MemberKind { Implementer, Reviewer, Investigator, Closer, PlanReviewer, Reconciler }
 impl MemberKind {
-    pub fn is_quiet(self) -> bool;                       // reviewers, plan reviewers and closers (MSG-3)
+    pub fn is_quiet(self) -> bool;                       // the kind alone: reviewers, plan reviewers, reconcilers and closers (MSG-3)
     pub fn may_send(self, kind: MessageType) -> bool;    // a member never sends reprompt or note; a quiet kind sends nothing
 }
 pub enum Mode { Worktree, Pane }
@@ -65,8 +65,36 @@ pub struct Member {
     pub base_sha: Option<String>, pub check: Option<String>, pub owns: Vec<String>,
     pub deadline_s: u64, pub state: MemberState, pub generation: u32,
     pub gen_started_at: Timestamp, /* … */
+    pub quiet: bool,                  // what the spec's `quiet` said; false for a quiet kind with no key
+    pub set: Option<String>,          // the spec's set label
+}
+impl Member {
+    pub fn is_quiet(&self) -> bool;                      // its kind is quiet, or `quiet` is true (MSG-3)
+    pub fn may_send(&self, kind: MessageType) -> bool;   // what its kind may send, and nothing when quiet
+    pub fn hears(&self, sender: &Actor) -> bool;         // may be shown a message from `sender`: not quiet, or the sender is its own lead
 }
 ```
+
+Every rule that decides silence asks `Member::is_quiet` or
+`Member::may_send`, never the kind alone: the sender and recipient checks of
+a send, the check of a recipient in another team, and the roster. A
+`Member`'s JSON (`teamwire export`) writes `quiet` in effect, the answer of
+`is_quiet`, so a reviewer's JSON says `"quiet": true` although its stored
+value is false.
+
+A member can become quiet after a message to it was stored: a relaunch after
+a failed start may set `quiet` or a quiet kind. So every read that shows a
+member a message asks `Member::hears` again, through `ReadTx::hears(recipient,
+sender)` in the store: the inbox and `ack`, the reminder of the member hook
+and the Stop hook's list, the step that types a message for a send or a
+resend, a member's own `log`, and status. A row that was not typed moves to
+`undelivered` with `recipient_not_allowed`, and no resend types it. A row
+that may already be on the old screen (`handed_off`, `unconfirmed`) cannot
+move back, so each read leaves it out instead.
+
+A reconciler reads the reports of one set of readers and
+writes the one report the next step acts on; it runs in `pane` mode only
+(ADR 0057). A set is the members with the same `set` label in one team.
 
 ## 3. Messages and deliveries
 
@@ -124,6 +152,7 @@ pub enum DeliveryErrorCode {
     DeliveryInterrupted,  // left in `delivering` past `delivering_stale_s` (REP-14)
     BudgetExhausted,      // the turn-end hook's delivery budget ran out (ADR 0007)
     HeldForHandoff,       // the recipient asked for a handoff; nothing was typed (ADR 0043)
+    RecipientNotAllowed,  // the recipient is quiet and the sender is not its own lead; never typed (MSG-3)
 }
 
 /// Why a send was refused before anything was stored (MSG-1..MSG-3, MSG-9, MSG-14, MSG-15, MSG-20).
@@ -194,7 +223,7 @@ so they need no schema change:
 | --- | --- | --- |
 | `member.started` | `model`, `effort` | What the member was launched with. `null` when the spec named none. A missing key means an older build started the member. |
 | `member.started` | `excluded` | The `info/exclude` lines this launch added, as `[{ "file": <absolute path>, "lines": [...] }]`, one entry per append (setup files, then `/TASK.md`). A line that was already in the file is not listed. Close takes these back. A missing key means an older build started the member. |
-| `result.delivering` | `usage`, `session` | `usage` maps a model name to the session's running totals `input`, `output`, `cache_read` and `cache_creation`, counted once per `message.id` across the member's main transcript and its subagent transcripts (`<session-id>/subagents/*.jsonl`). A subagent file that would take the sum past 64 MiB, is not a regular file or cannot be read is skipped, and the rest still count. `session` is the session id, so a new session's totals are not taken as a continuation. `usage` is missing when the transcript is missing, unreadable, over 64 MiB, not a regular file, or holds no assistant usage; `session` is always written. `teamwire metrics` reads them. |
+| `result.delivering` | `usage`, `session` | `usage` maps a model name to the session's running totals `input`, `output`, `cache_read` and `cache_creation`, and `cost_micro_usd` when the harness recorded money (only pi does; ADR 0060), counted once per `message.id` across the member's main transcript and its subagent transcripts (`<session-id>/subagents/*.jsonl`). A subagent file that would take the sum past 64 MiB, is not a regular file or cannot be read is skipped, and the rest still count. `session` is the session id, so a new session's totals are not taken as a continuation. `usage` is missing when the transcript is missing, unreadable, over 64 MiB, not a regular file, or holds no assistant usage; `session` is always written. `teamwire metrics` reads them. |
 | `team.created` | `lead_cwd` | The folder of the lead's session at launch, when the harness can name it. |
 | `team.created` | `refs` | The spec's ticket refs as `{"provider", "id"}` objects, deduplicated, in order; `[]` for none. A missing key means an older build created the team. |
 | `team.refs_added` | `added` | The refs, as objects, that a later `launch --add` appended to the team, in order (ADR 0038). |
@@ -385,6 +414,14 @@ pub trait Harness: Send + Sync {
     /// `capabilities().can_push`; the default returns `Unsupported`.
     fn push(&self, s: &SessionId, line: &OneLine, timeout: Duration) -> Result<(), HostError> {
         Err(HostError::unsupported())
+    }
+    /// The family of `model`, a spec's `model` value for this harness, to
+    /// label it and to warn about a set (ADR 0056). Default: the core's
+    /// `model_family(model)`, which reads the string alone. Claude Code
+    /// returns `Claude` for every value, aliases such as `opus` included,
+    /// because it starts Claude models only. pi keeps the default.
+    fn model_family(&self, model: &str) -> ModelFamily {
+        model_family(model)
     }
 }
 
@@ -678,7 +715,9 @@ pub struct MemberSpec { pub role: Role, pub title: String, pub kind: Option<Memb
                         pub deadline_s: Option<u64>, pub setup: Option<String>,
                         pub dispatch: bool, pub accept_trust: bool,
                         pub context_handoff_tokens: Option<u64>,   // overrides the team's; 0 is refused
-                        pub plugins: BTreeMap<String, bool> }   // overrides the team's, per key
+                        pub plugins: BTreeMap<String, bool>,    // overrides the team's, per key
+                        pub quiet: Option<bool>,                // true makes any kind quiet; false on a quiet kind is refused (ADR 0058)
+                        pub set: Option<String> }               // set label, ^[a-z][a-z0-9_]{0,15}$ (ADR 0057)
 
 /// Everything a harness needs to build one member's start.
 pub struct MemberLaunch { pub team: TeamName, pub role: Role, pub address: Address,
@@ -768,8 +807,13 @@ impl MemberLaunch { pub fn home_from_member_dir(&self) -> Option<String>;
 pub fn team_scratch_dir(home: &Path, team: &TeamName) -> PathBuf;
 /// One model's tokens in a session so far, in the shape of `data.usage` on
 /// `result.delivering`. A kind the harness does not report is 0.
-pub struct TokenCounts { pub input: u64, pub output: u64, pub cache_read: u64, pub cache_creation: u64 }
-impl TokenCounts { pub fn add(&mut self, other: Self); }  // each count saturating
+/// `cost_micro_usd` is the money the harness recorded, in whole millionths
+/// of a US dollar (ADR 0060); 0 means none recorded, and the JSON then
+/// leaves the key out.
+pub struct TokenCounts { pub input: u64, pub output: u64, pub cache_read: u64, pub cache_creation: u64,
+                         #[serde(default, skip_serializing_if = "is_zero")] pub cost_micro_usd: u64 }
+impl TokenCounts { pub fn add(&mut self, other: Self);    // each field saturating
+                   pub fn micro_usd(dollars: f64) -> u64; }  // nearest millionth; below 0 or NaN is 0
 pub type SessionUsage = BTreeMap<String, TokenCounts>;   // by model name
 impl LaunchSpec { pub fn shell_word(text: &str) -> String; }  // single-quotes any word outside [A-Za-z0-9/._-+:=@,]; "%" is quoted
 /// What the harness returns. Files are written by launch (mode given) before spawn.
@@ -801,6 +845,22 @@ pub struct Config { pub poll_s: u64, pub silent_polls: u32, pub startup_grace_s:
                     pub close_exit_wait_ms: u64,                          // 5000; close's wait for a closed place's processes (CLS-1)
                     pub min_free_bytes: u64, pub otel: OtelConfig }
 pub struct OtelConfig { pub endpoint: Option<String>, pub headers: Vec<(String, String)> }
+
+/// The vendor line of a model (`teamwire_core::models`, ADR 0056). Strings:
+/// claude, gpt, gemini, gemma, grok, deepseek, kimi, glm, qwen, mistral, llama, unknown.
+pub enum ModelFamily { Claude, Gpt, Gemini, Gemma, Grok, Deepseek, Kimi, Glm, Qwen,
+                       Mistral, Llama, Unknown }
+/// The family of a spec's `model` string, read from the string alone. It
+/// reads no file, calls nothing and never guesses: a string the tables
+/// do not place is `Unknown`. The string is lowercased. An
+/// `openrouter/<vendor>/<id>` string is placed by its vendor
+/// part alone, after a leading `~`, so `openrouter/openai/o3` is `Gpt`; the
+/// `google` vendor's id must start with `gemini` or `gemma`. Any other
+/// string is placed by the start of its `normalise_model` name, such as
+/// `claude`, `gpt-` or `deepseek`. Launch and `teamwire models` call
+/// `Harness::model_family`, not this function, so a harness can answer for
+/// its own models.
+pub fn model_family(model: &str) -> ModelFamily;
 ```
 
 Result types of the service calls (`SendReport`, `InboxItem`, `DoneReport`,
@@ -915,12 +975,15 @@ list has no type for them: `set_sleep_hold`, `set_member_place`,
 `set_member_session`, `set_member_token_hash`, `set_refs`, `set_gate_told_generation`,
 `set_completion_final`, `clear_member_branch`, `set_member_scope` (for `teamwire amend`:
 it replaces a member's `check_cmd` and whole `owns` list; its record is the
-`CHECK AMENDED:` note stored in the same transaction, ADR 0046), `announce_once`, `heartbeat_watch_lease`, and the
+`CHECK AMENDED:` note stored in the same transaction, ADR 0046), `set_member_marks(role,
+quiet, set)` (a member's `quiet` and set label, which launch writes right after it inserts or
+relaunches the member and names in the data of that `member.creating` event; `NewMember`
+has no field for them), `announce_once`, `heartbeat_watch_lease`, and the
 metric-export writes `claim_metric_export` (whose `up_to: Option<u64>` limit stops a claim before an event of an open minute), `commit_metric_export` and
 `release_metric_claim`. The list is in the `Tx` doc comment
 (`crates/teamwire-store/src/tx.rs`).
 
-The schema is version 12: `crates/teamwire-store/src/schema/v1.sql` to `v12.sql`,
+The schema is version 13: `crates/teamwire-store/src/schema/v1.sql` to `v13.sql`,
 applied in order. Version 2 adds `team.closing_pid_started_at` and
 `metric_export.claimed_by_started_at`: the start time of the pid beside
 each, NULL when the platform could not read it (ADR 0002 decision 8).
@@ -948,7 +1011,13 @@ rebuilds `events` with the `member.woken` type, as version 10 did, and keeps eve
 version 11 cannot be opened by an older binary. Version 12 (`src/schema/v12.sql`) rebuilds
 `events` the same way with three more types, `dialog.opened`, `dialog.answered` and
 `dialog.closed`, and adds no table and no column: a dialog's state is read from its events
-(ADR 0052). The tables and columns are those in
+(ADR 0052). Version 13 (`src/schema/v13.sql`) rebuilds `members` as version 9 did, with
+`reconciler` in its `kind` CHECK list and two new last columns: `quiet INTEGER NOT NULL
+DEFAULT 0 CHECK (quiet IN (0, 1))` and `set_label TEXT`. Every row keeps its values and takes
+`quiet` 0 and `set_label` NULL (ADR 0057, ADR 0058). A read-only open of an older database
+shows both as NULL, read as not quiet and in no set. `ReadTx::members` reads its order from
+`main.members`, because that open reads `members` through a view, which has no rowid. The
+tables and columns are those in
 `ARCHITECTURE.md`, "Data model". Constraints
 that carry integrity:
 

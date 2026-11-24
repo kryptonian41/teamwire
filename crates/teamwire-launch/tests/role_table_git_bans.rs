@@ -39,6 +39,7 @@ fn seat_bans(kind: MemberKind) -> BTreeSet<String> {
         teamwire_bin: Path::new("/opt/x/teamwire"),
         check: None,
         owns: &[],
+        quiet: false,
     });
     let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
     flat.split(". ")

@@ -17,6 +17,7 @@ mod lead;
 mod lead_copy;
 mod log;
 mod prove;
+mod quiet;
 mod remote;
 mod resend;
 mod roster;

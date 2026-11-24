@@ -17,7 +17,7 @@ export const PlaceState = z.enum(["idle", "working", "blocked", "gone", "unknown
 export const ReportState = z.enum(["pending", "delivering", "delivered", "undelivered", "unconfirmed"]);
 export const DeliveryState = z.enum(["pending", "handed_off", "unconfirmed", "undelivered", "acked"]);
 export const MessageType = z.enum(["notice", "finding", "question", "answer", "reprompt", "note"]);
-export const MemberKind = z.enum(["implementer", "reviewer", "investigator", "closer", "plan_reviewer"]);
+export const MemberKind = z.enum(["implementer", "reviewer", "investigator", "closer", "plan_reviewer", "reconciler"]);
 export const Lifecycle = z.enum(["creating", "started", "failed", "removed"]);
 
 /** Team and role names: `^[a-z][a-z0-9_]*$`, never a hyphen. */
@@ -213,6 +213,14 @@ export const RosterMember = z.object({
   owns: z.array(z.string()),
   accepts_from_members: z.array(MessageType),
   can_be_typed_to: z.boolean(),
+  /**
+   * Whether the member is quiet in effect: its kind is quiet, or its spec set
+   * `quiet`. A quiet member sends nothing and hears only its own lead. Older
+   * teamwire omits it.
+   */
+  quiet: z.boolean().default(false),
+  /** The set the member belongs to, if its spec named one. Older teamwire omits it. */
+  set: z.string().nullable().default(null),
 });
 
 export const TeamEntry = z.object({

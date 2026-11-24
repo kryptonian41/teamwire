@@ -18,16 +18,18 @@ fn render(kind: MemberKind) -> String {
         teamwire_bin: Path::new("/opt/x/teamwire"),
         check: None,
         owns: &[],
+        quiet: false,
     });
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-const KINDS: [MemberKind; 5] = [
+const KINDS: [MemberKind; 6] = [
     MemberKind::Implementer,
     MemberKind::Investigator,
     MemberKind::Reviewer,
     MemberKind::Closer,
     MemberKind::PlanReviewer,
+    MemberKind::Reconciler,
 ];
 
 #[test]

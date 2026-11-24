@@ -19,6 +19,7 @@ fn every_kind_is_told_not_to_administer_worktrees() {
             teamwire_bin: Path::new("/opt/x/teamwire"),
             check: None,
             owns: &[],
+            quiet: false,
         });
         assert!(
             text.contains(
@@ -45,6 +46,7 @@ fn every_kind_is_told_to_record_done_again_after_a_message_wakes_it() {
             teamwire_bin: Path::new("/opt/x/teamwire"),
             check: None,
             owns: &[],
+            quiet: false,
         });
         assert!(
             text.contains(
@@ -73,6 +75,7 @@ fn every_kind_is_told_who_runs_the_full_gate() {
             teamwire_bin: Path::new("/opt/x/teamwire"),
             check: None,
             owns: &[],
+            quiet: false,
         });
         assert!(!text.contains("or the\n  closer runs those once"), "{kind}");
         assert!(
@@ -113,6 +116,7 @@ fn a_talking_member_is_told_its_brief_wins_over_the_users_message() {
             teamwire_bin: Path::new("/opt/x/teamwire"),
             check: None,
             owns: &[],
+            quiet: false,
         });
         assert_eq!(text.contains(rule), !kind.is_quiet(), "{kind}");
     }

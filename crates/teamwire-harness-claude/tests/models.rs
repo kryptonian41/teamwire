@@ -4,11 +4,11 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use teamwire_core::{CatalogSource, Harness, HarnessError, ModelCatalog};
+use teamwire_core::{CatalogSource, Harness, HarnessError, ModelCatalog, ModelFamily};
 use teamwire_fakes::FakePlatform;
 use teamwire_harness_claude::{ClaudeCode, ClaudeConfig};
 
-fn catalog() -> Result<ModelCatalog, HarnessError> {
+fn adapter() -> ClaudeCode {
     ClaudeCode::new(
         Arc::new(FakePlatform::new()),
         ClaudeConfig {
@@ -17,7 +17,36 @@ fn catalog() -> Result<ModelCatalog, HarnessError> {
             claude_bin: "claude".into(),
         },
     )
-    .models(Duration::from_secs(1))
+}
+
+fn catalog() -> Result<ModelCatalog, HarnessError> {
+    adapter().models(Duration::from_secs(1))
+}
+
+/// Claude Code starts only Claude models, so its every model value is of
+/// the Claude family: the aliases, the full ids, and a name the core's
+/// tables would not place (ADR 0056).
+#[test]
+fn every_claude_code_model_is_of_the_claude_family() {
+    let adapter = adapter();
+    for model in [
+        "opus",
+        "sonnet",
+        "haiku",
+        "fable",
+        "claude-fable-5-2",
+        "opusplan",
+    ] {
+        assert_eq!(adapter.model_family(model), ModelFamily::Claude, "{model}");
+    }
+    for row in &catalog().unwrap().models {
+        assert_eq!(
+            adapter.model_family(&row.id),
+            ModelFamily::Claude,
+            "{}",
+            row.id
+        );
+    }
 }
 
 #[test]

@@ -20,6 +20,8 @@ pub(crate) struct Unread {
 /// one does no more work (ADR 0043 decision 11). A `pending` delivery is still being sent by its sender, so it
 /// counts only once it is stale: a sender that crashed after the commit
 /// would otherwise leave the message unnamed for good (ADR 0003 point 8).
+/// A message `me` may not be shown, because it is quiet and the sender is
+/// not its own lead, is never named (MSG-3).
 pub(crate) fn unread(ctx: &Ctx<'_>, me: &Role) -> Result<Vec<Unread>, StoreError> {
     ctx.store.read(|tx| {
         let recipient = Recipient::Member(me.clone());
@@ -56,6 +58,9 @@ pub(crate) fn unread(ctx: &Ctx<'_>, me: &Role) -> Result<Vec<Unread>, StoreError
                 Err(e) => return Err(e),
             };
             if let Some(message) = message {
+                if !tx.hears(&recipient, &message.sender)? {
+                    continue;
+                }
                 if d.delivery.state == DeliveryState::HandedOff && line_holds_whole(&message.body) {
                     continue;
                 }

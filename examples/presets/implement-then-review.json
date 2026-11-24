@@ -3,6 +3,7 @@
   "_why_this_works": "Review is where the tokens go in agentic software work, driven by long dialogue between a programmer and a reviewer. One fresh reviewer reading a finished diff costs a fraction of that and catches the same class of bug, because it has no stake in the code it reads.",
   "_rules": [
     "Launch the reviewer with `teamwire launch --add` only AFTER the implementer reports done. Do not run them together.",
+    "The review round may be a reviewer set instead of one reviewer, when the user chose a set. Two or three reviewers on different model families read the same diff side by side, then one reconciler joins their findings. Start it from `teamwire preset review-set` in place of the `review` member. A set reads once, so it is the one review round, and a second round stays forbidden.",
     "The reviewer reads the committed diff and writes findings. It must NOT edit code. A reviewer that starts rewriting has stopped reviewing.",
     "Send the findings that carry a concrete failure back to the implementer with `teamwire send <team> --to impl --type reprompt --file <findings>`. Allow at most two fix rounds. If the second still leaves real findings, the task was underspecified, so fix the spec yourself instead of running a third round.",
     "Write each brief with three sections: 'Done when' (acceptance criteria you can check), 'Out of scope', and 'When to do nothing' (the preconditions under which the member changes nothing and reports why). State the end state, not the steps.",

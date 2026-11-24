@@ -72,6 +72,13 @@ test("tokens: rows are running totals, so the newest row of each session counts 
   expect(tokensByModel([...series, bare], "x").get("m")!.output).toBe(205);
 });
 
+test("tokens: a pi member's money in the usage is not counted as tokens", () => {
+  // teamwire writes cost_micro_usd beside the token counts when the harness recorded money.
+  const row = ev("result.delivering", "x", { session: "s1", usage: { m: { input: 3, output: 45, cache_read: 0, cache_creation: 9456, cost_micro_usd: 120480 } } });
+  expect(tokensByModel([row], "x").get("m")).toEqual({ input: 3, output: 45, cacheRead: 0, cacheCreation: 9456 });
+  expect(tokensText([row], "x")).toBe("45 out · 9.5k total");
+});
+
 test("verify: a PASS run's flags are waived; the FLAGGED run before it keeps the waivers", () => {
   const flags = ["outside-owns:a", "weakened:b"];
   const real = [

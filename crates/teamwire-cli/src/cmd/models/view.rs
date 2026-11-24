@@ -6,7 +6,7 @@
 //! state directory and prints the result. This file takes them as values,
 //! so a test can give it a fake harness and a made-up outcome report; the
 //! CLI tests compile this file in for that reason, so it names nothing of
-//! this crate.
+//! this crate but its sibling `family`.
 //!
 //! Invariants: nothing here ranks across sources, marks one model as best,
 //! blends the evidence with the outcomes, or turns a count into a
@@ -17,10 +17,12 @@ use std::time::Duration;
 use serde::Serialize;
 use serde_json::{Value, json};
 use teamwire_core::{
-    CatalogSource, Evidence, EvidenceEntry, Harness, HarnessError, ModelCatalog, ModelInfo,
-    TaskClass,
+    CatalogSource, Evidence, EvidenceEntry, Harness, HarnessError, ModelCatalog, ModelFamily,
+    ModelInfo, TaskClass,
 };
 use teamwire_otel::{OutcomeReport, OutcomeRow};
+
+use super::family::{catalog_json, families};
 
 /// How long a harness may take to list its models. pi's `--list-models`
 /// takes a few seconds on a machine with many providers.
@@ -37,6 +39,8 @@ const UNCLASSIFIED: &str = "unclassified";
 pub(crate) struct View {
     pub(crate) harness: String,
     pub(crate) catalog: ModelCatalog,
+    /// The family of each model of `catalog`, in its order.
+    pub(crate) families: Vec<ModelFamily>,
     /// Present with `--for`.
     pub(crate) class: Option<ClassView>,
 }
@@ -112,6 +116,7 @@ pub(crate) fn gather(
     });
     Ok(View {
         harness: harness.id().as_str().to_owned(),
+        families: families(harness, &catalog),
         catalog,
         class,
     })
@@ -199,7 +204,8 @@ pub(crate) fn class_outcomes(report: OutcomeReport, class: TaskClass) -> ClassOu
 
 /// The view as one JSON object.
 pub(crate) fn json(view: &View) -> Value {
-    let mut doc = json!({ "harness": view.harness, "catalog": view.catalog });
+    let catalog = catalog_json(&view.catalog, &view.families);
+    let mut doc = json!({ "harness": view.harness, "catalog": catalog });
     if let (Some(class), Value::Object(map)) = (&view.class, &mut doc) {
         map.insert("task_class".into(), json!(class.class.as_str()));
         map.insert("evidence".into(), json!(class.evidence));
@@ -233,10 +239,13 @@ pub(crate) fn text(view: &View) -> String {
             "models: {}. Write a value of the first column in a spec's `model`.",
             catalog.models.len()
         ));
-        let mut rows = vec![cells(&["model", "aliases", "context", "thinking"])];
-        rows.extend(catalog.models.iter().map(|m| {
+        let header = ["model", "family", "aliases", "context", "thinking"];
+        let mut rows = vec![cells(&header)];
+        let models = catalog.models.iter().zip(&view.families);
+        rows.extend(models.map(|(m, family)| {
             vec![
                 spec_value(m),
+                family.as_str().to_owned(),
                 or_dash(&m.aliases.join(", ")),
                 m.context_tokens.map_or_else(|| "-".to_owned(), tokens),
                 if m.thinking { "yes" } else { "no" }.to_owned(),

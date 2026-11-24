@@ -233,10 +233,14 @@ pub(crate) fn context_fill(file: &Path) -> Option<Fill> {
 
 /// The token usage of every assistant message in the file, by model. A line
 /// is `{"type":"message","id":..,"message":{"role":"assistant","model":..,
-/// "usage":{"input","output","cacheRead","cacheWrite",..}}}` (pi's
-/// `session-format.md`). pi writes each response once, as one entry with
-/// its own id, so each line counts once. `None` when the file is missing,
-/// larger than `MAX_USAGE_BYTES`, or holds no assistant message.
+/// "usage":{"input","output","cacheRead","cacheWrite","cost":{"total",..}}}}`
+/// (pi's `session-format.md`). pi writes each response once, as one entry
+/// with its own id, so each line counts once. `cost.total` is that reply's
+/// money in US dollars, rounded to whole millionths before it is added; a
+/// line without it adds no money. In real pi files only `message` lines
+/// hold a `cost`, and every line of another type is skipped. `None` when
+/// the file is missing, larger than `MAX_USAGE_BYTES`, or holds no
+/// assistant message.
 pub(crate) fn session_usage(file: &Path) -> Option<SessionUsage> {
     std::fs::metadata(file)
         .ok()
@@ -268,6 +272,10 @@ pub(crate) fn session_usage(file: &Path) -> Option<SessionUsage> {
                 output: count("output"),
                 cache_read: count("cacheRead"),
                 cache_creation: count("cacheWrite"),
+                cost_micro_usd: usage
+                    .pointer("/cost/total")
+                    .and_then(Value::as_f64)
+                    .map_or(0, TokenCounts::micro_usd),
             });
     }
     (!totals.is_empty()).then_some(totals)

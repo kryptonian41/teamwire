@@ -112,4 +112,13 @@ pub struct MemberSpec {
     /// `DEFAULT_HANDOFF_PCT` of the model's window. Launch refuses 0.
     #[serde(default)]
     pub context_handoff_tokens: Option<u64>,
+    /// `true` makes a member of any kind quiet: it sends no message, and
+    /// only its own lead may message it (MSG-3). Launch refuses `false` on a
+    /// kind that is quiet by nature.
+    #[serde(default)]
+    pub quiet: Option<bool>,
+    /// The set this member belongs to (`^[a-z][a-z0-9_]{0,15}$`). Members
+    /// with the same label do the same judging job on the same brief.
+    #[serde(default)]
+    pub set: Option<String>,
 }

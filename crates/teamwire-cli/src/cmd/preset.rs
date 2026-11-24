@@ -1,4 +1,4 @@
-//! `teamwire preset`: the six team shapes and the three steps added to a team.
+//! `teamwire preset`: the six team shapes and the five steps added to a team.
 //!
 //! The presets are the files of `examples/presets/`, compiled into the binary
 //! so the command works wherever it is installed. Each file is a team spec
@@ -14,9 +14,10 @@ use crate::wiring::Wiring;
 use crate::{Global, PresetArgs, USAGE};
 
 /// The presets in the order `preset` lists them: the ones to reach for first
-/// come first. The `plan-review` step goes before the implementers, and the
-/// `integrator` and `closer` steps after the last wave.
-const PRESETS: [(&str, &str); 9] = [
+/// come first. The `plan-review` and `plan-review-set` steps go before the
+/// implementers, the `review-set` step after the last implementer it reads,
+/// and the `integrator` and `closer` steps after the last wave.
+const PRESETS: [(&str, &str); 11] = [
     (
         "survey",
         include_str!("../../../../examples/presets/survey.json"),
@@ -46,6 +47,14 @@ const PRESETS: [(&str, &str); 9] = [
         include_str!("../../../../examples/presets/plan-review.json"),
     ),
     (
+        "plan-review-set",
+        include_str!("../../../../examples/presets/plan-review-set.json"),
+    ),
+    (
+        "review-set",
+        include_str!("../../../../examples/presets/review-set.json"),
+    ),
+    (
         "integrator",
         include_str!("../../../../examples/presets/integrator.json"),
     ),
@@ -58,7 +67,7 @@ const PRESETS: [(&str, &str); 9] = [
 /// The order keys are printed in. A spec reads best with the team and title
 /// first and each member's identity before its task; `serde_json` would sort
 /// them alphabetically.
-const KEY_ORDER: [&str; 29] = [
+const KEY_ORDER: [&str; 31] = [
     "_wave",
     "_blocked_by",
     "_launch_after",
@@ -72,6 +81,8 @@ const KEY_ORDER: [&str; 29] = [
     "host",
     "children",
     "kind",
+    "set",
+    "quiet",
     "mode",
     "task_class",
     "repo",

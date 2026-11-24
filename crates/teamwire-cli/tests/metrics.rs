@@ -953,3 +953,92 @@ fn metrics_print_tokens_for_pi_and_fake_harness_members() {
         assert!(!lines.is_empty(), "{role}: {}", run.out);
     }
 }
+
+/// A pi member's harness records the money of each reply, so its delivered
+/// result gives one money line per model, in dollars to 4 places. A Claude
+/// Code member records no money and gets no money line, never a line of 0.
+#[test]
+fn metrics_print_money_for_a_pi_member_and_none_for_a_claude_code_member() {
+    let home = TestHome::new().unwrap();
+    let mut s = open(&home, "alpha");
+    for (role, harness, model, cost) in [
+        ("readb", "pi", "openai/gpt-6.2-astra", Some(1_587_800)),
+        ("readc", "pi", "google/gemini-4-argon", Some(400)),
+        ("reada", "claude-code", "claude-opus-5-5", None),
+    ] {
+        let role = Role::parse(role).unwrap();
+        let mut counts =
+            json!({"input": 2000, "output": 400, "cache_read": 3000, "cache_creation": 0});
+        if let Some(cost) = cost {
+            counts["cost_micro_usd"] = json!(cost);
+        }
+        s.write(|tx| {
+            tx.insert_member(
+                at(1),
+                &NewMember {
+                    role: role.clone(),
+                    title: format!("the {role}"),
+                    kind: MemberKind::Reviewer,
+                    mode: Mode::Pane,
+                    harness: HarnessId::parse(harness).unwrap(),
+                    host: HostId::from_static("herdr"),
+                    cwd: "/work".into(),
+                    repo: None,
+                    branch: None,
+                    base: None,
+                    base_sha: None,
+                    check: None,
+                    owns: Vec::new(),
+                    deadline_s: 1800,
+                },
+            )?;
+            tx.record_event(
+                at(2),
+                EventType::MemberCreating,
+                Some(&role),
+                None,
+                &json!({"kind": "reviewer", "task_class": "judgement"}),
+            )?;
+            tx.record_event(
+                at(3),
+                EventType::MemberStarted,
+                Some(&role),
+                None,
+                &json!({"effort": "high"}),
+            )?;
+            tx.record_event(
+                at(5),
+                EventType::ResultDelivering,
+                Some(&role),
+                None,
+                &json!({"session": "s1", "usage": {model: counts}}),
+            )
+            .map(|_| ())
+        })
+        .unwrap();
+    }
+    let run = teamwire(&home, &[], &["metrics", "alpha"]);
+    assert_eq!(run.code, 0, "{}{}", run.out, run.err);
+    let money: Vec<&str> = run
+        .out
+        .lines()
+        .filter(|l| l.starts_with("teamwire.member.cost{"))
+        .collect();
+    assert_eq!(
+        money,
+        [
+            "teamwire.member.cost{team=alpha,role=readb,kind=reviewer,model=openai/gpt-6.2-astra,effort=high,task_class=judgement} 1.5878 usd",
+            "teamwire.member.cost{team=alpha,role=readc,kind=reviewer,model=google/gemini-4-argon,effort=high,task_class=judgement} 0.0004 usd",
+        ],
+        "{}",
+        run.out
+    );
+    // The Claude Code member's tokens still print; only money is missing.
+    assert!(
+        run.out
+            .lines()
+            .any(|l| l.starts_with("teamwire.member.tokens{") && l.contains("role=reada")),
+        "{}",
+        run.out
+    );
+}

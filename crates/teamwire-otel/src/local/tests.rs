@@ -1102,6 +1102,73 @@ fn member_tokens_take_the_newest_totals_not_a_sum_of_cumulative_events() {
     assert_eq!(value("cache_creation"), None);
 }
 
+/// Money rides on the same cumulative usage as tokens, in millionths of a
+/// dollar, and shows in dollars. A model whose harness recorded no money
+/// gets no line, not a line of 0.
+#[test]
+fn member_cost_takes_the_newest_total_not_a_sum_of_cumulative_events() {
+    let home = TestHome::new().unwrap();
+    let mut s = open(&home, "alpha");
+    ev(
+        &mut s,
+        1,
+        EventType::MemberCreating,
+        Some("readb"),
+        None,
+        &json!({"kind": "reviewer"}),
+    );
+    let usage = |micro: u64| {
+        json!({"session": "s1", "usage": {
+            "openai/gpt-6-astra": {"input": 3, "output": 45, "cache_read": 0, "cache_creation": 0, "cost_micro_usd": micro},
+            "claude-opus-5-5": {"input": 3, "output": 45, "cache_read": 0, "cache_creation": 0},
+        }})
+    };
+    for (secs, micro) in [(10, 120_480), (20, 1_500_000)] {
+        ev(
+            &mut s,
+            secs,
+            EventType::ResultDelivering,
+            Some("readb"),
+            Some(&ulid(secs)),
+            &usage(micro),
+        );
+    }
+    // A later session starts again from zero.
+    ev(
+        &mut s,
+        30,
+        EventType::ResultDelivering,
+        Some("readb"),
+        Some(&ulid(30)),
+        &json!({"session": "s2", "usage": {"openai/gpt-6-astra": {"input": 1, "output": 0, "cache_read": 0, "cache_creation": 0, "cost_micro_usd": 87_800}}}),
+    );
+    let v = view(&home, &query(Some("alpha")), 100);
+    let cost: Vec<_> = v
+        .metrics
+        .iter()
+        .filter(|m| m.name == "teamwire.member.cost")
+        .collect();
+    assert_eq!(cost.len(), 1, "{cost:?}");
+    let line = cost.first().unwrap();
+    assert_eq!(line.unit, "usd");
+    assert!((line.value - 1.5878).abs() < 1e-9, "{}", line.value); // 1.5 in s1 + 0.0878 in s2
+    for (key, value) in [
+        ("team", "alpha"),
+        ("role", "readb"),
+        ("kind", "reviewer"),
+        ("model", "openai/gpt-6-astra"),
+        ("effort", "unset"),
+        ("task_class", "unclassified"),
+    ] {
+        assert!(
+            line.labels.contains(&(key.to_owned(), value.to_owned())),
+            "{key}: {:?}",
+            line.labels
+        );
+    }
+    assert_eq!(line.labels.len(), 6, "{:?}", line.labels);
+}
+
 #[test]
 fn member_tokens_carry_the_effort_the_member_started_with_or_unset() {
     let home = TestHome::new().unwrap();

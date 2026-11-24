@@ -118,12 +118,14 @@ pub fn send_with_write(
     let team = own;
     write_copy(ctx, &team, &message);
 
-    // A held row waits for the handoff or a reprompt, also on a resume.
+    // A held row waits for the handoff or a reprompt, also on a resume. A
+    // withheld row is final (MSG-3).
     let to_try = |r: &DeliveryRecord| {
         matches!(
             r.delivery.state,
             DeliveryState::Pending | DeliveryState::Undelivered
         ) && !is_held(r)
+            && !crate::quiet::is_withheld(&r.delivery)
     };
     let mut deliveries = Vec::new();
     for record in &stored.deliveries {

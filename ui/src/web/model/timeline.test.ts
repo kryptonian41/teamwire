@@ -108,6 +108,11 @@ test("a message held for a handoff is not a problem row, another undelivered one
   expect(matchesFilter(ev("delivery.undelivered", "api", { code: "held_for_handoff" }), "messages")).toBe(true);
 });
 
+test("a message withheld from a member that became quiet is not a problem row", () => {
+  expect(isProblem(ev("delivery.undelivered", "inv", { code: "recipient_not_allowed", attempts: 1 }, "m014"))).toBe(false);
+  expect(matchesFilter(ev("delivery.undelivered", "inv", { code: "recipient_not_allowed" }), "messages")).toBe(true);
+});
+
 test("a watch line is a problem only when one of its words is an alert", () => {
   const watch = (...events: string[]) => isProblem(ev("watch.line", null, { events }));
   for (const calm of [["WATCHING"], ["WATCHING 3"], ["TEAM-COMPLETE"], ["COMPLETED"], ["WATCHING 2", "TEAM-COMPLETE"]]) {

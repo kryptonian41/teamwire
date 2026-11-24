@@ -194,10 +194,17 @@ fn the_fill_is_the_newest_reading() {
 }
 
 /// A pi session file in the shape pi 1.4 writes, its message text cut out.
+/// One line is made up for the test: the `"type":"usage"` line that holds a
+/// `cost`. No real pi file has that line type. It proves that a line of any
+/// type other than `message` adds no tokens and no money.
 const USAGE_FIXTURE: &str = include_str!("fixtures/session-usage.jsonl");
 
 /// Every assistant message counts once, by its model. pi splits a response
 /// into input, output, cache reads and cache writes, as Claude Code does.
+/// Its money is `usage.cost.total`, rounded per reply to whole millionths
+/// of a dollar: 25424 + 9515 (from 9515.3) + 23481 (from 23480.5) for
+/// the Gemini model. A model a subscription pays for records 0. The
+/// made-up `"type":"usage"` line counts for nothing.
 #[test]
 fn the_usage_sums_every_assistant_message_by_model() {
     let rig = Rig::new();
@@ -212,6 +219,7 @@ fn the_usage_sums_every_assistant_message_by_model() {
             output: 236,
             cache_read: 23_285,
             cache_creation: 24_976,
+            cost_micro_usd: 0,
         },
     );
     want.insert(
@@ -221,6 +229,17 @@ fn the_usage_sums_every_assistant_message_by_model() {
             output: 5,
             cache_read: 0,
             cache_creation: 0,
+            cost_micro_usd: 60,
+        },
+    );
+    want.insert(
+        "google/gemini-4-argon".to_owned(),
+        TokenCounts {
+            input: 23_755,
+            output: 856,
+            cache_read: 23_498,
+            cache_creation: 0,
+            cost_micro_usd: 58_420,
         },
     );
     assert_eq!(
@@ -243,6 +262,25 @@ fn a_session_with_no_assistant_message_has_no_usage() {
         &[header(ID), MESSAGE.to_owned(), fill(30_000)],
     );
     assert_eq!(rig.pi().session_usage(&id(), None).unwrap(), None);
+}
+
+/// A pi build that writes no `cost` object records no money, and the
+/// reading's JSON keeps the four token keys it had before money existed.
+#[test]
+fn a_reply_without_a_cost_records_no_money_and_the_old_json() {
+    let rig = Rig::new();
+    let reply = r#"{"type":"message","id":"a1","parentId":null,"timestamp":"2026-11-10T07:28:05.843Z","message":{"role":"assistant","content":[],"model":"gpt-5","usage":{"input":10,"output":5,"cacheRead":2,"cacheWrite":1,"totalTokens":18}}}"#;
+    rig.write(
+        "2026-11-10T07-27-55-158Z",
+        ID,
+        &[header(ID), reply.to_owned()],
+    );
+    let usage = rig.pi().session_usage(&id(), None).unwrap().unwrap();
+    assert_eq!(usage.get("gpt-5").map(|c| c.cost_micro_usd), Some(0));
+    assert_eq!(
+        serde_json::to_value(&usage).unwrap(),
+        serde_json::json!({"gpt-5": {"input": 10, "output": 5, "cache_read": 2, "cache_creation": 1}})
+    );
 }
 
 #[test]

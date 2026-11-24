@@ -146,6 +146,11 @@ fn read_rows(tx: &ReadTx<'_>, ctx: &Ctx<'_>, now: Timestamp) -> Result<Rows, Sto
         let Some(message) = tx.message(&d.message)? else {
             continue;
         };
+        // A message its quiet recipient may not be shown is never typed or
+        // read, and needs no attention (MSG-3).
+        if !tx.hears(&d.recipient, &message.sender)? {
+            continue;
+        }
         // A message held for a handoff waits on purpose, for the fresh
         // session or a reprompt, so it needs no attention (ADR 0043).
         if d.state == DeliveryState::Undelivered
@@ -185,6 +190,9 @@ fn read_rows(tx: &ReadTx<'_>, ctx: &Ctx<'_>, now: Timestamp) -> Result<Rows, Sto
         let Some(message) = tx.message(&d.message)? else {
             continue;
         };
+        if !tx.hears(&d.recipient, &message.sender)? {
+            continue;
+        }
         let Some(since) = AttemptHistory::read(tx, &message, &d.recipient)?.unread_since(tx)?
         else {
             continue;
